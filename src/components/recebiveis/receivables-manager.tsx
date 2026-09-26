@@ -194,75 +194,145 @@ export function ReceivablesManager() {
             Nenhum recebível neste mês.
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] text-left text-sm">
-              <thead className="border-b border-slate-100 bg-slate-50/80 text-xs uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="px-4 py-3 font-medium">Fonte/Origem</th>
-                  <th className="px-4 py-3 font-medium">Descrição</th>
-                  <th className="px-4 py-3 font-medium">Valor</th>
-                  <th className="px-4 py-3 font-medium">
-                    Data prevista / recebimento
-                  </th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 font-medium text-right">Ações</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {receivables.map((item) => (
-                  <tr key={item.id} className="hover:bg-slate-50/60">
-                    <td className="px-4 py-3 font-medium text-slate-900">
-                      {item.clients?.name ?? "—"}
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">
-                      {item.description}
-                    </td>
-                    <td className="px-4 py-3 tabular-nums">
-                      {formatCurrency(Number(item.amount_due))}
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">
-                      {formatDate(
-                        item.status === "recebido" && item.payment_date
-                          ? item.payment_date
-                          : item.due_date,
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge
-                        variant={
-                          item.status === "recebido" ? "success" : "warning"
-                        }
-                      >
-                        {item.status === "recebido" ? "Recebido" : "A receber"}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex justify-end gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 w-8 p-0"
-                          onClick={() => openEdit(item)}
-                          aria-label="Editar"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 w-8 p-0 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
-                          onClick={() => handleDelete(item.id)}
-                          aria-label="Excluir"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </td>
+          <>
+            {/* Mobile: cards */}
+            <ul className="divide-y divide-slate-100 md:hidden">
+              {receivables.map((item) => (
+                <li key={item.id} className="space-y-3 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium text-slate-900">
+                        {item.description}
+                      </p>
+                      <p className="mt-0.5 truncate text-xs text-slate-500">
+                        {item.clients?.name ?? "—"}
+                      </p>
+                    </div>
+                    <Badge
+                      variant={
+                        item.status === "recebido" ? "success" : "warning"
+                      }
+                    >
+                      {item.status === "recebido" ? "Recebido" : "A receber"}
+                    </Badge>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <p className="text-xs text-slate-400">Valor</p>
+                      <p className="font-semibold tabular-nums text-slate-900">
+                        {formatCurrency(Number(item.amount_due))}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-400">
+                        Data prevista / recebimento
+                      </p>
+                      <p className="text-slate-700">
+                        {formatDate(
+                          item.status === "recebido" && item.payment_date
+                            ? item.payment_date
+                            : item.due_date,
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-1 border-t border-slate-50 pt-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 p-0"
+                      onClick={() => openEdit(item)}
+                      aria-label="Editar"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 p-0 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                      onClick={() => handleDelete(item.id)}
+                      aria-label="Excluir"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+
+            {/* Desktop: tabela */}
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full text-left text-sm">
+                <thead className="border-b border-slate-100 bg-slate-50/80 text-xs uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3 font-medium">Fonte/Origem</th>
+                    <th className="px-4 py-3 font-medium">Descrição</th>
+                    <th className="px-4 py-3 font-medium">Valor</th>
+                    <th className="px-4 py-3 font-medium">
+                      Data prevista / recebimento
+                    </th>
+                    <th className="px-4 py-3 font-medium">Status</th>
+                    <th className="px-4 py-3 font-medium text-right">Ações</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {receivables.map((item) => (
+                    <tr key={item.id} className="hover:bg-slate-50/60">
+                      <td className="px-4 py-3 font-medium text-slate-900">
+                        {item.clients?.name ?? "—"}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {item.description}
+                      </td>
+                      <td className="px-4 py-3 tabular-nums">
+                        {formatCurrency(Number(item.amount_due))}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {formatDate(
+                          item.status === "recebido" && item.payment_date
+                            ? item.payment_date
+                            : item.due_date,
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge
+                          variant={
+                            item.status === "recebido" ? "success" : "warning"
+                          }
+                        >
+                          {item.status === "recebido"
+                            ? "Recebido"
+                            : "A receber"}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0"
+                            onClick={() => openEdit(item)}
+                            aria-label="Editar"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                            onClick={() => handleDelete(item.id)}
+                            aria-label="Excluir"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </Card>
 

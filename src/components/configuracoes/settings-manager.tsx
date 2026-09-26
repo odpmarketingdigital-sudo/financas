@@ -188,7 +188,7 @@ export function SettingsManager() {
               value={clientPhone}
               onChange={(e) => setClientPhone(e.target.value)}
             />
-            <Button type="submit" disabled={savingClient} className="self-start">
+            <Button type="submit" disabled={savingClient} className="w-full self-stretch sm:w-auto sm:self-start">
               {savingClient ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
@@ -207,14 +207,14 @@ export function SettingsManager() {
             {clients.map((client) => (
               <li
                 key={client.id}
-                className="flex items-center justify-between gap-3 py-3"
+                className="flex items-start justify-between gap-3 py-3"
               >
-                <div>
-                  <p className="text-sm font-medium text-slate-900">
+                <div className="min-w-0 flex-1">
+                  <p className="break-words font-medium text-slate-900">
                     {client.name}
                   </p>
                   {(client.email || client.phone) && (
-                    <p className="text-xs text-slate-500">
+                    <p className="mt-0.5 break-all text-xs text-slate-500">
                       {[client.email, client.phone].filter(Boolean).join(" · ")}
                     </p>
                   )}
@@ -222,7 +222,7 @@ export function SettingsManager() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-8 w-8 p-0 text-rose-600 hover:bg-rose-50"
+                  className="h-8 w-8 shrink-0 p-0 text-rose-600 hover:bg-rose-50"
                   onClick={() => deleteClient(client.id)}
                   aria-label="Excluir fonte de renda"
                 >
@@ -273,15 +273,15 @@ export function SettingsManager() {
             {categories.map((category) => (
               <li
                 key={category.id}
-                className="flex items-center justify-between gap-3 py-3"
+                className="flex items-start justify-between gap-3 py-3"
               >
-                <p className="text-sm font-medium text-slate-900">
+                <p className="min-w-0 flex-1 break-words text-sm font-medium text-slate-900">
                   {category.name}
                 </p>
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-8 w-8 p-0 text-rose-600 hover:bg-rose-50"
+                  className="h-8 w-8 shrink-0 p-0 text-rose-600 hover:bg-rose-50"
                   onClick={() => deleteCategory(category.id)}
                   aria-label="Excluir categoria"
                 >

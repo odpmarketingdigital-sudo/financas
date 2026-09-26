@@ -175,73 +175,143 @@ export function ExpensesManager() {
             Nenhuma despesa neste mês. Cadastre a primeira!
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-left text-sm">
-              <thead className="border-b border-slate-100 bg-slate-50/80 text-xs uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="px-4 py-3 font-medium">Descrição</th>
-                  <th className="px-4 py-3 font-medium">Categoria</th>
-                  <th className="px-4 py-3 font-medium">Valor</th>
-                  <th className="px-4 py-3 font-medium">Vencimento</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 font-medium">Pagamento</th>
-                  <th className="px-4 py-3 font-medium text-right">Ações</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {expenses.map((expense) => (
-                  <tr key={expense.id} className="hover:bg-slate-50/60">
-                    <td className="px-4 py-3 font-medium text-slate-900">
-                      {expense.description}
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">
-                      {expense.categories?.name ?? "—"}
-                    </td>
-                    <td className="px-4 py-3 tabular-nums text-slate-900">
-                      {formatCurrency(Number(expense.amount))}
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">
-                      {formatDate(expense.due_date)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge
-                        variant={
-                          expense.status === "paga" ? "success" : "warning"
-                        }
-                      >
-                        {expense.status === "paga" ? "Paga" : "Não paga"}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">
-                      {formatDate(expense.payment_date)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex justify-end gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 w-8 p-0"
-                          onClick={() => openEdit(expense)}
-                          aria-label="Editar"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 w-8 p-0 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
-                          onClick={() => handleDelete(expense.id)}
-                          aria-label="Excluir"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+          <>
+            {/* Mobile: cards */}
+            <ul className="divide-y divide-slate-100 md:hidden">
+              {expenses.map((expense) => (
+                <li key={expense.id} className="space-y-3 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium text-slate-900">
+                        {expense.description}
+                      </p>
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        {expense.categories?.name ?? "Sem categoria"}
+                      </p>
+                    </div>
+                    <Badge
+                      variant={
+                        expense.status === "paga" ? "success" : "warning"
+                      }
+                    >
+                      {expense.status === "paga" ? "Paga" : "Não paga"}
+                    </Badge>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <p className="text-xs text-slate-400">Valor</p>
+                      <p className="font-semibold tabular-nums text-slate-900">
+                        {formatCurrency(Number(expense.amount))}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-400">Vencimento</p>
+                      <p className="text-slate-700">
+                        {formatDate(expense.due_date)}
+                      </p>
+                    </div>
+                    {expense.payment_date && (
+                      <div className="col-span-2">
+                        <p className="text-xs text-slate-400">Pagamento</p>
+                        <p className="text-slate-700">
+                          {formatDate(expense.payment_date)}
+                        </p>
                       </div>
-                    </td>
+                    )}
+                  </div>
+                  <div className="flex justify-end gap-1 border-t border-slate-50 pt-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 p-0"
+                      onClick={() => openEdit(expense)}
+                      aria-label="Editar"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 p-0 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                      onClick={() => handleDelete(expense.id)}
+                      aria-label="Excluir"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+
+            {/* Desktop: tabela */}
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full text-left text-sm">
+                <thead className="border-b border-slate-100 bg-slate-50/80 text-xs uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3 font-medium">Descrição</th>
+                    <th className="px-4 py-3 font-medium">Categoria</th>
+                    <th className="px-4 py-3 font-medium">Valor</th>
+                    <th className="px-4 py-3 font-medium">Vencimento</th>
+                    <th className="px-4 py-3 font-medium">Status</th>
+                    <th className="px-4 py-3 font-medium">Pagamento</th>
+                    <th className="px-4 py-3 font-medium text-right">Ações</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {expenses.map((expense) => (
+                    <tr key={expense.id} className="hover:bg-slate-50/60">
+                      <td className="px-4 py-3 font-medium text-slate-900">
+                        {expense.description}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {expense.categories?.name ?? "—"}
+                      </td>
+                      <td className="px-4 py-3 tabular-nums text-slate-900">
+                        {formatCurrency(Number(expense.amount))}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {formatDate(expense.due_date)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge
+                          variant={
+                            expense.status === "paga" ? "success" : "warning"
+                          }
+                        >
+                          {expense.status === "paga" ? "Paga" : "Não paga"}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {formatDate(expense.payment_date)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0"
+                            onClick={() => openEdit(expense)}
+                            aria-label="Editar"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                            onClick={() => handleDelete(expense.id)}
+                            aria-label="Excluir"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </Card>
 
