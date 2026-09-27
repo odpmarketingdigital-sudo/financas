@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import { useMonth } from "@/contexts/month-context";
 import { createClient } from "@/lib/supabase/client";
-import type { Category, Expense, ExpenseStatus } from "@/lib/types";
+import { EXPENSE_CATEGORIES } from "@/constants/categories";
+import { mergeCategories, toCategoryOptions } from "@/lib/categories";
+import type { Expense, ExpenseStatus } from "@/lib/types";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,7 +17,7 @@ import { Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 
 interface ExpenseFormState {
   description: string;
-  category_id: string;
+  category: string;
   amount: string;
   due_date: string;
   status: ExpenseStatus;
@@ -24,7 +26,7 @@ interface ExpenseFormState {
 
 const emptyForm: ExpenseFormState = {
   description: "",
-  category_id: "",
+  category: "",
   amount: "",
   due_date: "",
   status: "nao_paga",
@@ -36,21 +38,28 @@ async function fetchExpensesData(referenceMonth: string) {
   const [expRes, catRes] = await Promise.all([
     supabase
       .from("expenses")
-      .select("*, categories(id, name)")
+      .select("*")
       .eq("reference_month", referenceMonth)
       .order("due_date", { ascending: true }),
-    supabase.from("categories").select("*").order("name"),
+    supabase
+      .from("categories")
+      .select("name")
+      .eq("type", "expense")
+      .order("name", { ascending: true }),
   ]);
+
   return {
     expenses: (expRes.data as Expense[]) ?? [],
-    categories: (catRes.data as Category[]) ?? [],
+    customCategories: ((catRes.data ?? []) as { name: string }[]).map(
+      (category) => category.name,
+    ),
   };
 }
 
 export function ExpensesManager() {
   const { referenceMonth } = useMonth();
   const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [customCategories, setCustomCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
@@ -62,12 +71,14 @@ export function ExpensesManager() {
   useEffect(() => {
     let cancelled = false;
 
-    fetchExpensesData(referenceMonth).then(({ expenses: next, categories: cats }) => {
-      if (cancelled) return;
-      setExpenses(next);
-      setCategories(cats);
-      setLoading(false);
-    });
+    fetchExpensesData(referenceMonth).then(
+      ({ expenses: next, customCategories: custom }) => {
+        if (cancelled) return;
+        setExpenses(next);
+        setCustomCategories(custom);
+        setLoading(false);
+      },
+    );
 
     return () => {
       cancelled = true;
@@ -92,7 +103,7 @@ export function ExpensesManager() {
     setEditing(expense);
     setForm({
       description: expense.description,
-      category_id: expense.category_id ?? "",
+      category: expense.category ?? "",
       amount: String(expense.amount),
       due_date: expense.due_date,
       status: expense.status,
@@ -125,7 +136,7 @@ export function ExpensesManager() {
 
     const payload = {
       description: form.description.trim(),
-      category_id: form.category_id || null,
+      category: form.category || null,
       amount: Number(form.amount),
       due_date: form.due_date,
       status: form.status,
@@ -186,7 +197,7 @@ export function ExpensesManager() {
                         {expense.description}
                       </p>
                       <p className="mt-0.5 text-xs text-slate-500">
-                        {expense.categories?.name ?? "Sem categoria"}
+                        {expense.category ?? "Sem categoria"}
                       </p>
                     </div>
                     <Badge
@@ -264,7 +275,7 @@ export function ExpensesManager() {
                         {expense.description}
                       </td>
                       <td className="px-4 py-3 text-slate-600">
-                        {expense.categories?.name ?? "—"}
+                        {expense.category ?? "—"}
                       </td>
                       <td className="px-4 py-3 tabular-nums text-slate-900">
                         {formatCurrency(Number(expense.amount))}
@@ -333,12 +344,15 @@ export function ExpensesManager() {
           <Select
             id="category"
             label="Categoria"
-            placeholder="Selecione (opcional)"
-            value={form.category_id}
+            required
+            placeholder="Selecione"
+            value={form.category}
             onChange={(e) =>
-              setForm((f) => ({ ...f, category_id: e.target.value }))
+              setForm((f) => ({ ...f, category: e.target.value }))
             }
-            options={categories.map((c) => ({ value: c.id, label: c.name }))}
+            options={toCategoryOptions(
+              mergeCategories(EXPENSE_CATEGORIES, customCategories),
+            )}
           />
           <Input
             id="amount"

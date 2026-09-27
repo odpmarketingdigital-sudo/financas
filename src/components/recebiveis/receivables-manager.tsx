@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import { useMonth } from "@/contexts/month-context";
 import { createClient } from "@/lib/supabase/client";
-import type { Client, Receivable, ReceivableStatus } from "@/lib/types";
+import { RECEIVABLE_CATEGORIES } from "@/constants/categories";
+import { mergeCategories, toCategoryOptions } from "@/lib/categories";
+import type { Receivable, ReceivableStatus } from "@/lib/types";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +16,7 @@ import { Card } from "@/components/ui/card";
 import { Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 
 interface ReceivableFormState {
-  client_id: string;
+  category: string;
   description: string;
   amount: string;
   date: string;
@@ -22,7 +24,7 @@ interface ReceivableFormState {
 }
 
 const emptyForm: ReceivableFormState = {
-  client_id: "",
+  category: "",
   description: "",
   amount: "",
   date: "",
@@ -31,24 +33,31 @@ const emptyForm: ReceivableFormState = {
 
 async function fetchReceivablesData(referenceMonth: string) {
   const supabase = createClient();
-  const [recRes, cliRes] = await Promise.all([
+  const [recRes, catRes] = await Promise.all([
     supabase
       .from("receivables")
-      .select("*, clients(id, name)")
+      .select("*")
       .eq("reference_month", referenceMonth)
       .order("due_date", { ascending: true }),
-    supabase.from("clients").select("*").order("name"),
+    supabase
+      .from("categories")
+      .select("name")
+      .eq("type", "receivable")
+      .order("name", { ascending: true }),
   ]);
+
   return {
     receivables: (recRes.data as Receivable[]) ?? [],
-    clients: (cliRes.data as Client[]) ?? [],
+    customCategories: ((catRes.data ?? []) as { name: string }[]).map(
+      (category) => category.name,
+    ),
   };
 }
 
 export function ReceivablesManager() {
   const { referenceMonth } = useMonth();
   const [receivables, setReceivables] = useState<Receivable[]>([]);
-  const [clients, setClients] = useState<Client[]>([]);
+  const [customCategories, setCustomCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
@@ -61,10 +70,10 @@ export function ReceivablesManager() {
     let cancelled = false;
 
     fetchReceivablesData(referenceMonth).then(
-      ({ receivables: next, clients: cli }) => {
+      ({ receivables: next, customCategories: custom }) => {
         if (cancelled) return;
         setReceivables(next);
-        setClients(cli);
+        setCustomCategories(custom);
         setLoading(false);
       },
     );
@@ -91,7 +100,7 @@ export function ReceivablesManager() {
   function openEdit(item: Receivable) {
     setEditing(item);
     setForm({
-      client_id: item.client_id,
+      category: item.category ?? "",
       description: item.description,
       amount: String(item.amount_due),
       date:
@@ -108,8 +117,8 @@ export function ReceivablesManager() {
     e.preventDefault();
     setError(null);
 
-    if (!form.client_id) {
-      setError("Selecione uma fonte / pagador.");
+    if (!form.category) {
+      setError("Selecione uma categoria / fonte de renda.");
       return;
     }
 
@@ -135,7 +144,7 @@ export function ReceivablesManager() {
 
     // amount → amount_due; se Recebido, payment_date atua como receipt_date
     const payload = {
-      client_id: form.client_id,
+      category: form.category,
       description: form.description.trim(),
       amount_due: amount,
       amount_paid: isReceived ? amount : 0,
@@ -171,18 +180,11 @@ export function ReceivablesManager() {
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <Button onClick={openCreate} disabled={clients.length === 0}>
+        <Button onClick={openCreate}>
           <Plus className="h-4 w-4" />
           Novo recebível
         </Button>
       </div>
-
-      {clients.length === 0 && !loading && (
-        <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          Cadastre pelo menos uma fonte de renda em Configurações antes de criar
-          recebíveis.
-        </p>
-      )}
 
       <Card className="overflow-hidden p-0">
         {loading ? (
@@ -205,7 +207,7 @@ export function ReceivablesManager() {
                         {item.description}
                       </p>
                       <p className="mt-0.5 truncate text-xs text-slate-500">
-                        {item.clients?.name ?? "—"}
+                        {item.category ?? "—"}
                       </p>
                     </div>
                     <Badge
@@ -265,7 +267,7 @@ export function ReceivablesManager() {
               <table className="w-full text-left text-sm">
                 <thead className="border-b border-slate-100 bg-slate-50/80 text-xs uppercase tracking-wide text-slate-500">
                   <tr>
-                    <th className="px-4 py-3 font-medium">Fonte/Origem</th>
+                    <th className="px-4 py-3 font-medium">Categoria</th>
                     <th className="px-4 py-3 font-medium">Descrição</th>
                     <th className="px-4 py-3 font-medium">Valor</th>
                     <th className="px-4 py-3 font-medium">
@@ -279,7 +281,7 @@ export function ReceivablesManager() {
                   {receivables.map((item) => (
                     <tr key={item.id} className="hover:bg-slate-50/60">
                       <td className="px-4 py-3 font-medium text-slate-900">
-                        {item.clients?.name ?? "—"}
+                        {item.category ?? "—"}
                       </td>
                       <td className="px-4 py-3 text-slate-600">
                         {item.description}
@@ -343,15 +345,17 @@ export function ReceivablesManager() {
       >
         <form onSubmit={handleSave} className="flex flex-col gap-4">
           <Select
-            id="client"
-            label="Fonte / Pagador"
-            placeholder="Ex: Salário, Mesada, Pensão, Cliente X"
+            id="category"
+            label="Categoria"
             required
-            value={form.client_id}
+            placeholder="Selecione"
+            value={form.category}
             onChange={(e) =>
-              setForm((f) => ({ ...f, client_id: e.target.value }))
+              setForm((f) => ({ ...f, category: e.target.value }))
             }
-            options={clients.map((c) => ({ value: c.id, label: c.name }))}
+            options={toCategoryOptions(
+              mergeCategories(RECEIVABLE_CATEGORIES, customCategories),
+            )}
           />
           <Input
             id="description"

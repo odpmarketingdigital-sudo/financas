@@ -59,6 +59,7 @@ src/
       recebiveis/
       configuracoes/
   components/           # UI e módulos de negócio
+  constants/            # Categorias padrão (mescladas com as do banco)
   contexts/             # Seletor de mês/ano
   lib/supabase/         # Clientes browser/server
 supabase/schema.sql     # Tabelas + RLS

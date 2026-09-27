@@ -11,8 +11,9 @@ create table if not exists public.categories (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   name text not null,
+  type text not null default 'expense' check (type in ('expense', 'receivable')),
   created_at timestamptz not null default now(),
-  unique (user_id, name)
+  unique (user_id, type, name)
 );
 
 alter table public.categories enable row level security;
@@ -72,6 +73,8 @@ create table if not exists public.expenses (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   description text not null,
+  category text,
+  -- legado (depreciado): a categoria agora é gravada como texto em `category`
   category_id uuid references public.categories(id) on delete set null,
   amount numeric(12, 2) not null check (amount >= 0),
   due_date date not null,
@@ -114,7 +117,9 @@ create policy "expenses_delete_own"
 create table if not exists public.receivables (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
-  client_id uuid not null references public.clients(id) on delete restrict,
+  category text,
+  -- legado (depreciado): mantido anulável para compatibilidade
+  client_id uuid references public.clients(id) on delete set null,
   description text not null,
   amount_due numeric(12, 2) not null check (amount_due >= 0),
   amount_paid numeric(12, 2) not null default 0 check (amount_paid >= 0),
@@ -146,3 +151,64 @@ create policy "receivables_update_own"
 create policy "receivables_delete_own"
   on public.receivables for delete
   using (auth.uid() = user_id);
+
+-- =====================
+-- MIGRAÇÃO: CATEGORIAS COMO TEXTO
+-- Execute esta seção em bancos já existentes — o script é idempotente.
+-- Categorias de despesas e recebíveis passam a ser gravadas como texto,
+-- a partir das listas em `src/constants/categories.ts`.
+-- =====================
+alter table public.expenses add column if not exists category text;
+alter table public.receivables add column if not exists category text;
+
+-- `client_id` deixa de ser obrigatório em recebíveis
+alter table public.receivables alter column client_id drop not null;
+
+-- Preenche `category` a partir dos vínculos antigos (somente quando vazio)
+update public.expenses e
+  set category = c.name
+  from public.categories c
+  where e.category_id = c.id
+    and e.category is null;
+
+update public.receivables r
+  set category = cl.name
+  from public.clients cl
+  where r.client_id = cl.id
+    and r.category is null;
+
+-- =====================
+-- MIGRAÇÃO: TIPO DE CATEGORIA ('expense' | 'receivable')
+-- As categorias personalizadas passam a ser classificadas por tipo.
+-- =====================
+alter table public.categories
+  add column if not exists type text not null default 'expense';
+
+-- A unicidade passa a considerar o tipo (ex.: "Outros" nos dois tipos)
+alter table public.categories
+  drop constraint if exists categories_user_id_name_key;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'categories_user_id_type_name_key'
+      and conrelid = 'public.categories'::regclass
+  ) then
+    alter table public.categories
+      add constraint categories_user_id_type_name_key
+      unique (user_id, type, name);
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'categories_type_check'
+      and conrelid = 'public.categories'::regclass
+  ) then
+    alter table public.categories
+      add constraint categories_type_check
+      check (type in ('expense', 'receivable'));
+  end if;
+end $$;
