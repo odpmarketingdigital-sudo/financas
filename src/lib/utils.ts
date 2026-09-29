@@ -32,6 +32,16 @@ export function parseReferenceMonth(referenceMonth: string): {
   return { year, month };
 }
 
+/** Último dia do mês informado (28, 29, 30 ou 31). Mês no formato 1-12. */
+export function getDaysInMonth(year: number, month: number): number {
+  return new Date(year, month, 0).getDate();
+}
+
+/** Monta a chave de data (YYYY-MM-DD) a partir de ano, mês (1-12) e dia. */
+export function toDateKey(year: number, month: number, day: number): string {
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
 export const MONTH_NAMES = [
   "Janeiro",
   "Fevereiro",

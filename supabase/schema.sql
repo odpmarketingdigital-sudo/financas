@@ -178,6 +178,73 @@ update public.receivables r
     and r.category is null;
 
 -- =====================
+-- BANCOS E CARTEIRAS DE DINHEIRO
+-- `is_cash = true` representa dinheiro físico/espécie (carteira).
+-- =====================
+create table if not exists public.bank_accounts (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null,
+  balance numeric(12, 2) not null default 0,
+  is_cash boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists bank_accounts_user_idx
+  on public.bank_accounts (user_id);
+
+alter table public.bank_accounts enable row level security;
+
+-- Políticas criadas em bloco para manter o script idempotente
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public'
+      and tablename = 'bank_accounts'
+      and policyname = 'bank_accounts_select_own'
+  ) then
+    create policy "bank_accounts_select_own"
+      on public.bank_accounts for select
+      using (auth.uid() = user_id);
+  end if;
+
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public'
+      and tablename = 'bank_accounts'
+      and policyname = 'bank_accounts_insert_own'
+  ) then
+    create policy "bank_accounts_insert_own"
+      on public.bank_accounts for insert
+      with check (auth.uid() = user_id);
+  end if;
+
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public'
+      and tablename = 'bank_accounts'
+      and policyname = 'bank_accounts_update_own'
+  ) then
+    create policy "bank_accounts_update_own"
+      on public.bank_accounts for update
+      using (auth.uid() = user_id)
+      with check (auth.uid() = user_id);
+  end if;
+
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public'
+      and tablename = 'bank_accounts'
+      and policyname = 'bank_accounts_delete_own'
+  ) then
+    create policy "bank_accounts_delete_own"
+      on public.bank_accounts for delete
+      using (auth.uid() = user_id);
+  end if;
+end $$;
+
+-- =====================
 -- MIGRAÇÃO: TIPO DE CATEGORIA ('expense' | 'receivable')
 -- As categorias personalizadas passam a ser classificadas por tipo.
 -- =====================

@@ -5,6 +5,8 @@ import {
   LayoutDashboard,
   Receipt,
   Wallet,
+  Landmark,
+  Calculator,
   Settings,
   LogOut,
   Menu,
@@ -21,6 +23,8 @@ const navItems = [
   { href: "/dashboard", label: "Painel", icon: LayoutDashboard },
   { href: "/dashboard/despesas", label: "Despesas", icon: Receipt },
   { href: "/dashboard/recebiveis", label: "Recebíveis", icon: Wallet },
+  { href: "/dashboard/bancos", label: "Bancos / Carteiras", icon: Landmark },
+  { href: "/caixa", label: "Caixa", icon: Calculator },
   { href: "/dashboard/configuracoes", label: "Configurações", icon: Settings },
 ];
 

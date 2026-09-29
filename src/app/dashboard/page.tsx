@@ -7,7 +7,7 @@ export default function DashboardPage() {
     <>
       <DashboardHeader
         title="Painel"
-        description="Resumo financeiro do mês selecionado para a família."
+        description="Saldos das contas e resumo financeiro do mês selecionado para a família."
       />
       <div className="space-y-4">
         <SummaryCards />

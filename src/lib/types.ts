@@ -47,7 +47,23 @@ export interface Receivable {
   created_at: string;
 }
 
+export interface BankAccount {
+  id: string;
+  user_id: string;
+  name: string;
+  balance: number;
+  /** `true` quando a conta representa dinheiro físico/espécie (carteira). */
+  is_cash: boolean;
+  created_at: string;
+}
+
 export interface DashboardSummary {
+  /** Soma dos saldos de todas as contas e carteiras (`bank_accounts`). */
+  saldoTotalAtual: number;
+  /** Soma apenas das contas marcadas como dinheiro físico (`is_cash`). */
+  dinheiroEmMao: number;
+  /** saldoTotalAtual + recebíveis pendentes do mês − despesas pendentes do mês. */
+  saldoPrevisto: number;
   totalAPagar: number;
   totalPago: number;
   totalAReceber: number;

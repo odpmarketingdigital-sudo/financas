@@ -8,6 +8,8 @@ Aplicação educacional de **finanças pessoais** para ajudar famílias a organi
 - Seletor global de mês/ano (`reference_month`)
 - Painel com resumos: a pagar, pago, a receber, recebido e resultados líquido previsto/realizado
 - Gestão de despesas, recebíveis, clientes e categorias
+- Cadastro de bancos e carteiras de dinheiro (com saldo por conta e marcação de dinheiro físico)
+- Fluxo de caixa diário do mês: entradas, saídas, saldo do dia e saldo acumulado (página Caixa)
 
 ## Pré-requisitos
 
@@ -57,7 +59,9 @@ src/
     dashboard/          # Painel e subpáginas
       despesas/
       recebiveis/
+      bancos/
       configuracoes/
+    caixa/              # Fluxo de caixa diário do mês
   components/           # UI e módulos de negócio
   constants/            # Categorias padrão (mescladas com as do banco)
   contexts/             # Seletor de mês/ano

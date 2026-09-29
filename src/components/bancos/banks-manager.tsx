@@ -1,0 +1,356 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
+import type { BankAccount } from "@/lib/types";
+import { formatCurrency } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Card, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Modal } from "@/components/ui/modal";
+import { Banknote, Landmark, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
+
+interface BankAccountFormState {
+  name: string;
+  balance: string;
+  is_cash: boolean;
+}
+
+const emptyForm: BankAccountFormState = {
+  name: "",
+  balance: "",
+  is_cash: false,
+};
+
+async function fetchBankAccounts(): Promise<BankAccount[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("bank_accounts")
+    .select("*")
+    .order("is_cash", { ascending: true })
+    .order("name", { ascending: true });
+
+  return (data as BankAccount[]) ?? [];
+}
+
+export function BanksManager() {
+  const [accounts, setAccounts] = useState<BankAccount[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState<BankAccount | null>(null);
+  const [form, setForm] = useState<BankAccountFormState>(emptyForm);
+  const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchBankAccounts().then((next) => {
+      if (cancelled) return;
+      setAccounts(next);
+      setLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadKey]);
+
+  function refresh() {
+    setReloadKey((k) => k + 1);
+  }
+
+  function openCreate() {
+    setEditing(null);
+    setForm(emptyForm);
+    setError(null);
+    setModalOpen(true);
+  }
+
+  function openEdit(account: BankAccount) {
+    setEditing(account);
+    setForm({
+      name: account.name,
+      balance: String(account.balance),
+      is_cash: account.is_cash,
+    });
+    setError(null);
+    setModalOpen(true);
+  }
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSaving(true);
+
+    const supabase = createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      setError("Sessão expirada. Faça login novamente.");
+      setSaving(false);
+      return;
+    }
+
+    const payload = {
+      name: form.name.trim(),
+      balance: Number(form.balance || 0),
+      is_cash: form.is_cash,
+      user_id: user.id,
+    };
+
+    const result = editing
+      ? await supabase.from("bank_accounts").update(payload).eq("id", editing.id)
+      : await supabase.from("bank_accounts").insert(payload);
+
+    setSaving(false);
+
+    if (result.error) {
+      setError(result.error.message);
+      return;
+    }
+
+    setModalOpen(false);
+    refresh();
+  }
+
+  async function handleDelete(account: BankAccount) {
+    if (!confirm(`Excluir "${account.name}"? Esta ação não pode ser desfeita.`)) {
+      return;
+    }
+
+    const supabase = createClient();
+    await supabase.from("bank_accounts").delete().eq("id", account.id);
+    refresh();
+  }
+
+  const totalBalance = accounts.reduce(
+    (sum, account) => sum + Number(account.balance),
+    0,
+  );
+  const cashBalance = accounts
+    .filter((account) => account.is_cash)
+    .reduce((sum, account) => sum + Number(account.balance), 0);
+  const bankBalance = totalBalance - cashBalance;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <Button onClick={openCreate}>
+          <Plus className="h-4 w-4" />
+          Nova conta
+        </Button>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Card className="p-4">
+          <CardTitle>Saldo total</CardTitle>
+          <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">
+            {formatCurrency(totalBalance)}
+          </p>
+        </Card>
+        <Card className="p-4">
+          <CardTitle>Em bancos</CardTitle>
+          <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">
+            {formatCurrency(bankBalance)}
+          </p>
+        </Card>
+        <Card className="p-4">
+          <CardTitle>Dinheiro físico</CardTitle>
+          <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">
+            {formatCurrency(cashBalance)}
+          </p>
+        </Card>
+      </div>
+
+      <Card className="overflow-hidden p-0">
+        {loading ? (
+          <div className="flex justify-center py-12 text-slate-400">
+            <Loader2 className="h-6 w-6 animate-spin" />
+          </div>
+        ) : accounts.length === 0 ? (
+          <p className="px-5 py-12 text-center text-sm text-slate-500">
+            Nenhum banco ou carteira cadastrado ainda. Cadastre o primeiro!
+          </p>
+        ) : (
+          <>
+            {/* Mobile: cards */}
+            <ul className="divide-y divide-slate-100 md:hidden">
+              {accounts.map((account) => (
+                <li key={account.id} className="space-y-3 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 flex-1 items-center gap-2">
+                      {account.is_cash ? (
+                        <Banknote className="h-4 w-4 shrink-0 text-slate-400" />
+                      ) : (
+                        <Landmark className="h-4 w-4 shrink-0 text-slate-400" />
+                      )}
+                      <p className="truncate font-medium text-slate-900">
+                        {account.name}
+                      </p>
+                    </div>
+                    <Badge variant={account.is_cash ? "warning" : "neutral"}>
+                      {account.is_cash ? "Dinheiro físico" : "Banco"}
+                    </Badge>
+                  </div>
+                  <div className="flex items-end justify-between gap-3">
+                    <div>
+                      <p className="text-xs text-slate-400">Saldo</p>
+                      <p className="font-semibold tabular-nums text-slate-900">
+                        {formatCurrency(Number(account.balance))}
+                      </p>
+                    </div>
+                    <div className="flex gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        onClick={() => openEdit(account)}
+                        aria-label={`Editar ${account.name}`}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                        onClick={() => handleDelete(account)}
+                        aria-label={`Excluir ${account.name}`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+
+            {/* Desktop: tabela */}
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full text-left text-sm">
+                <thead className="border-b border-slate-100 bg-slate-50/80 text-xs uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3 font-medium">Conta</th>
+                    <th className="px-4 py-3 font-medium">Tipo</th>
+                    <th className="px-4 py-3 font-medium">Saldo</th>
+                    <th className="px-4 py-3 font-medium text-right">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {accounts.map((account) => (
+                    <tr key={account.id} className="hover:bg-slate-50/60">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          {account.is_cash ? (
+                            <Banknote className="h-4 w-4 shrink-0 text-slate-400" />
+                          ) : (
+                            <Landmark className="h-4 w-4 shrink-0 text-slate-400" />
+                          )}
+                          <span className="font-medium text-slate-900">
+                            {account.name}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge variant={account.is_cash ? "warning" : "neutral"}>
+                          {account.is_cash ? "Dinheiro físico" : "Banco"}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3 tabular-nums text-slate-900">
+                        {formatCurrency(Number(account.balance))}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0"
+                            onClick={() => openEdit(account)}
+                            aria-label={`Editar ${account.name}`}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                            onClick={() => handleDelete(account)}
+                            aria-label={`Excluir ${account.name}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </Card>
+
+      <Modal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title={editing ? "Editar conta" : "Nova conta"}
+      >
+        <form onSubmit={handleSave} className="flex flex-col gap-4">
+          <Input
+            id="bank_name"
+            label="Nome da conta/banco"
+            required
+            value={form.name}
+            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            placeholder="Ex.: Nubank, Itaú, Carteira / Dinheiro Físico"
+          />
+          <Input
+            id="bank_balance"
+            label="Saldo inicial / saldo atual (R$)"
+            type="number"
+            step="0.01"
+            inputMode="decimal"
+            required
+            value={form.balance}
+            onChange={(e) => setForm((f) => ({ ...f, balance: e.target.value }))}
+            placeholder="0,00"
+          />
+          <Checkbox
+            id="bank_is_cash"
+            label="É dinheiro físico/espécie?"
+            description="Marque para carteiras de dinheiro em espécie."
+            checked={form.is_cash}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, is_cash: e.target.checked }))
+            }
+          />
+
+          {error && (
+            <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">
+              {error}
+            </p>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setModalOpen(false)}
+            >
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={saving}>
+              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+              Salvar
+            </Button>
+          </div>
+        </form>
+      </Modal>
+    </div>
+  );
+}
