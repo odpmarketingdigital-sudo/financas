@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useMonth } from "@/contexts/month-context";
 import { createClient } from "@/lib/supabase/client";
+import { recalculateAllBankAccountBalances } from "@/lib/bank-accounts";
 import type { DashboardSummary } from "@/lib/types";
 import { cn, formatCurrency } from "@/lib/utils";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -41,6 +42,10 @@ export function SummaryCards() {
 
     async function load() {
       const supabase = createClient();
+
+      // Garante que os cartões de saldo reflitam o saldo real calculado de
+      // cada conta (inicial + recebidos − pagos) antes de somá-los.
+      await recalculateAllBankAccountBalances();
 
       const [expensesRes, receivablesRes, bankAccountsRes] = await Promise.all([
         supabase
@@ -146,13 +151,6 @@ export function SummaryCards() {
       icon: Scale,
       accent: "text-teal-700 bg-teal-50",
     },
-    {
-      title: "Resultado Líquido Realizado",
-      value: summary.resultadoLiquidoRealizado,
-      hint: "Recebido − Pago",
-      icon: TrendingUp,
-      accent: "text-indigo-600 bg-indigo-50",
-    },
   ];
 
   if (loading) {
@@ -177,7 +175,7 @@ export function SummaryCards() {
                 {formatCurrency(summary.saldoTotalAtual)}
               </p>
               <p className="mt-1 text-xs text-slate-400">
-                Soma dos bancos e carteiras cadastrados
+                Saldo real calculado de bancos e carteiras
               </p>
             </div>
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700">
@@ -255,9 +253,16 @@ export function SummaryCards() {
       </div>
 
       {/* Demais indicadores do mês */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {cards.map(({ title, value, hint, icon: Icon, accent }) => (
-          <Card key={title} className="relative overflow-hidden">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
+        {cards.map(({ title, value, hint, icon: Icon, accent }, index) => (
+          <Card
+            key={title}
+            className={cn(
+              "relative overflow-hidden",
+              index < 3 ? "xl:col-span-2" : "xl:col-span-3",
+              index === cards.length - 1 && "sm:col-span-2",
+            )}
+          >
             <div className="flex items-start justify-between gap-3">
               <div>
                 <CardTitle>{title}</CardTitle>

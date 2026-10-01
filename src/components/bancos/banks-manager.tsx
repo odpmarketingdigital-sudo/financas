@@ -1,38 +1,72 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import {
+  BANK_OPTIONS,
+  OTHER_BANK_ID,
+  type BankOption,
+} from "@/constants/banks";
+import {
+  filterBankOptions,
+  findBankOptionByName,
+  mergeBankOptions,
+  toBankComboboxOptions,
+  toBankOption,
+} from "@/lib/banks";
+import { fetchBanks } from "@/services/brasilApi";
+import {
+  fetchBankAccounts,
+  recalculateAllBankAccountBalances,
+  recalculateBankAccountBalances,
+} from "@/lib/bank-accounts";
 import type { BankAccount } from "@/lib/types";
 import { formatCurrency } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Combobox } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { Banknote, Landmark, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 
 interface BankAccountFormState {
+  /** Id do banco selecionado no seletor (`""` = nenhum). */
+  bankId: string;
+  /** Nome gravado em `bank_accounts.name` (preenchido pelo seletor). */
   name: string;
-  balance: string;
+  /** Saldo de abertura gravado em `bank_accounts.initial_balance`. */
+  initialBalance: string;
   is_cash: boolean;
 }
 
 const emptyForm: BankAccountFormState = {
+  bankId: "",
   name: "",
-  balance: "",
+  initialBalance: "",
   is_cash: false,
 };
 
-async function fetchBankAccounts(): Promise<BankAccount[]> {
-  const supabase = createClient();
-  const { data } = await supabase
-    .from("bank_accounts")
-    .select("*")
-    .order("is_cash", { ascending: true })
-    .order("name", { ascending: true });
+/** Selo da conta: cor/sigla da marca quando o banco é reconhecido. */
+function AccountBrand({ account }: { account: BankAccount }) {
+  if (account.is_cash) {
+    return <Banknote className="h-4 w-4 shrink-0 text-slate-400" />;
+  }
 
-  return (data as BankAccount[]) ?? [];
+  const option = findBankOptionByName(account.name);
+  if (option && option.kind === "bank") {
+    return (
+      <span
+        aria-hidden
+        className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[9px] font-semibold uppercase"
+        style={{ backgroundColor: option.color, color: option.foreground }}
+      >
+        {option.initials}
+      </span>
+    );
+  }
+
+  return <Landmark className="h-4 w-4 shrink-0 text-slate-400" />;
 }
 
 export function BanksManager() {
@@ -44,20 +78,55 @@ export function BanksManager() {
   const [form, setForm] = useState<BankAccountFormState>(emptyForm);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [remoteBanks, setRemoteBanks] = useState<BankOption[]>([]);
+  const [remoteQuery, setRemoteQuery] = useState("");
+  const [searchingBanks, setSearchingBanks] = useState(false);
+  const searchSequence = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
 
-    fetchBankAccounts().then((next) => {
+    async function load() {
+      // Recalcula o saldo real antes de exibir: cobre movimentações feitas em
+      // outros dispositivos e eventuais divergências acumuladas.
+      await recalculateAllBankAccountBalances();
+      const next = await fetchBankAccounts();
+
       if (cancelled) return;
       setAccounts(next);
       setLoading(false);
-    });
+    }
+
+    void load();
 
     return () => {
       cancelled = true;
     };
   }, [reloadKey]);
+
+  /** Lista completa disponível: padrão + bancos encontrados na BrasilAPI. */
+  const allBankOptions = useMemo(
+    () => mergeBankOptions(BANK_OPTIONS, remoteBanks),
+    [remoteBanks],
+  );
+
+  const selectedBank =
+    allBankOptions.find((option) => option.id === form.bankId) ?? null;
+  const isCashSelected = selectedBank?.kind === "cash";
+  const isCustomSelected = selectedBank?.kind === "custom";
+  /** "Dinheiro em mãos" é fixo e nenhuma opção libera o nome sem banco. */
+  const nameLocked = !selectedBank || isCashSelected;
+
+  /** Opções do combobox: lista padrão + resultados online da busca atual. */
+  const comboboxOptions = useMemo(() => {
+    const matchedRemote = remoteQuery
+      ? filterBankOptions(remoteBanks, remoteQuery).slice(0, 40)
+      : [];
+    const options = [...BANK_OPTIONS, ...matchedRemote];
+    return toBankComboboxOptions(
+      mergeBankOptions(options, selectedBank ? [selectedBank] : []),
+    );
+  }, [remoteBanks, remoteQuery, selectedBank]);
 
   function refresh() {
     setReloadKey((k) => k + 1);
@@ -71,19 +140,93 @@ export function BanksManager() {
   }
 
   function openEdit(account: BankAccount) {
+    const option = findBankOptionByName(account.name);
+
     setEditing(account);
     setForm({
+      // Contas antigas com nome livre entram como "Outro Banco".
+      bankId: option?.id ?? OTHER_BANK_ID,
       name: account.name,
-      balance: String(account.balance),
-      is_cash: account.is_cash,
+      // Contas anteriores à migração guardam o saldo em `balance`.
+      initialBalance: String(account.initial_balance ?? account.balance ?? ""),
+      is_cash: account.is_cash || option?.kind === "cash",
     });
     setError(null);
     setModalOpen(true);
   }
 
+  /** Aplica o banco escolhido preenchendo (ou liberando) o nome da conta. */
+  function handleBankChange(bankId: string) {
+    setForm((current) => {
+      const option =
+        allBankOptions.find((item) => item.id === bankId) ?? null;
+
+      if (!option) {
+        return { ...current, bankId: "", name: "", is_cash: false };
+      }
+
+      // A marcação de dinheiro físico/espécie vem da própria opção escolhida
+      // no seletor ("Dinheiro em mãos" → `kind: "cash"`).
+      const is_cash = option.kind === "cash";
+
+      if (option.kind === "custom") {
+        // Nome digitado manualmente pelo usuário.
+        return { ...current, bankId: option.id, name: "", is_cash };
+      }
+
+      return { ...current, bankId: option.id, name: option.name, is_cash };
+    });
+  }
+
+  /**
+   * Complementa a busca com a lista completa do Banco Central quando nenhum
+   * banco da lista padrão corresponde ao termo digitado.
+   */
+  async function handleBankSearch(term: string) {
+    const trimmed = term.trim();
+    const localMatches = filterBankOptions(BANK_OPTIONS, trimmed).length > 0;
+
+    if (trimmed.length < 3 || localMatches) {
+      setRemoteQuery("");
+      return;
+    }
+
+    setRemoteQuery(trimmed);
+
+    // A lista completa já está em memória (cache do serviço).
+    if (remoteBanks.length > 0) return;
+
+    const sequence = searchSequence.current + 1;
+    searchSequence.current = sequence;
+    setSearchingBanks(true);
+
+    try {
+      const banks = await fetchBanks();
+      if (searchSequence.current !== sequence) return;
+      setRemoteBanks(banks.map(toBankOption));
+    } catch {
+      // A busca online é um complemento: falhas não bloqueiam o cadastro.
+    } finally {
+      if (searchSequence.current === sequence) setSearchingBanks(false);
+    }
+  }
+
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+
+    const name = form.name.trim();
+
+    if (!selectedBank) {
+      setError("Selecione um banco ou carteira na lista.");
+      return;
+    }
+
+    if (!name) {
+      setError("Informe o nome da conta.");
+      return;
+    }
+
     setSaving(true);
 
     const supabase = createClient();
@@ -97,24 +240,41 @@ export function BanksManager() {
       return;
     }
 
+    const initialBalance = Number(form.initialBalance || 0);
+
     const payload = {
-      name: form.name.trim(),
-      balance: Number(form.balance || 0),
+      name,
+      initial_balance: initialBalance,
       is_cash: form.is_cash,
       user_id: user.id,
     };
 
+    // `select("id")` devolve a conta gravada para recalcular o saldo real.
     const result = editing
-      ? await supabase.from("bank_accounts").update(payload).eq("id", editing.id)
-      : await supabase.from("bank_accounts").insert(payload);
-
-    setSaving(false);
+      ? await supabase
+          .from("bank_accounts")
+          .update(payload)
+          .eq("id", editing.id)
+          .select("id")
+          .single()
+      : await supabase
+          .from("bank_accounts")
+          .insert({ ...payload, balance: initialBalance })
+          .select("id")
+          .single();
 
     if (result.error) {
+      setSaving(false);
       setError(result.error.message);
       return;
     }
 
+    // Reajusta o saldo real (saldo inicial + recebidos − pagos) da conta.
+    await recalculateBankAccountBalances([
+      result.data?.id ?? editing?.id ?? null,
+    ]);
+
+    setSaving(false);
     setModalOpen(false);
     refresh();
   }
@@ -185,11 +345,7 @@ export function BanksManager() {
                 <li key={account.id} className="space-y-3 p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex min-w-0 flex-1 items-center gap-2">
-                      {account.is_cash ? (
-                        <Banknote className="h-4 w-4 shrink-0 text-slate-400" />
-                      ) : (
-                        <Landmark className="h-4 w-4 shrink-0 text-slate-400" />
-                      )}
+                      <AccountBrand account={account} />
                       <p className="truncate font-medium text-slate-900">
                         {account.name}
                       </p>
@@ -246,11 +402,7 @@ export function BanksManager() {
                     <tr key={account.id} className="hover:bg-slate-50/60">
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          {account.is_cash ? (
-                            <Banknote className="h-4 w-4 shrink-0 text-slate-400" />
-                          ) : (
-                            <Landmark className="h-4 w-4 shrink-0 text-slate-400" />
-                          )}
+                          <AccountBrand account={account} />
                           <span className="font-medium text-slate-900">
                             {account.name}
                           </span>
@@ -301,34 +453,58 @@ export function BanksManager() {
         title={editing ? "Editar conta" : "Nova conta"}
       >
         <form onSubmit={handleSave} className="flex flex-col gap-4">
-          <Input
-            id="bank_name"
-            label="Nome da conta/banco"
-            required
-            value={form.name}
-            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-            placeholder="Ex.: Nubank, Itaú, Carteira / Dinheiro Físico"
+          <Combobox
+            id="bank_option"
+            label="Banco / carteira"
+            options={comboboxOptions}
+            value={form.bankId}
+            onChange={handleBankChange}
+            onSearchChange={handleBankSearch}
+            loading={searchingBanks}
+            placeholder="Selecione um banco ou carteira"
+            searchPlaceholder="Buscar banco (ex.: Nubank, Sicoob...)"
+            emptyMessage="Nenhum banco encontrado. Escolha “Outro Banco” para digitar o nome."
+            hint="Principais bancos do Brasil. Digite o nome para buscar outros bancos online."
           />
           <Input
-            id="bank_balance"
-            label="Saldo inicial / saldo atual (R$)"
+            id="bank_name"
+            label="Nome da conta"
+            required
+            disabled={nameLocked}
+            value={form.name}
+            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            placeholder={
+              isCustomSelected
+                ? "Digite o nome do banco ou carteira"
+                : "Preenchido ao selecionar um banco"
+            }
+            className={nameLocked ? "cursor-not-allowed bg-slate-50 text-slate-500" : undefined}
+          />
+          <Input
+            id="bank_initial_balance"
+            label="Saldo inicial (R$)"
             type="number"
             step="0.01"
             inputMode="decimal"
             required
-            value={form.balance}
-            onChange={(e) => setForm((f) => ({ ...f, balance: e.target.value }))}
+            value={form.initialBalance}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, initialBalance: e.target.value }))
+            }
             placeholder="0,00"
           />
-          <Checkbox
-            id="bank_is_cash"
-            label="É dinheiro físico/espécie?"
-            description="Marque para carteiras de dinheiro em espécie."
-            checked={form.is_cash}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, is_cash: e.target.checked }))
-            }
-          />
+          <p className="-mt-2 text-xs text-slate-500">
+            {editing ? (
+              <>
+                Saldo atual calculado (inicial + recebidos − pagos):{" "}
+                <span className="font-medium tabular-nums text-slate-700">
+                  {formatCurrency(Number(editing.balance))}
+                </span>
+              </>
+            ) : (
+              "O saldo atual passa a ser recalculado conforme despesas e recebíveis."
+            )}
+          </p>
 
           {error && (
             <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">

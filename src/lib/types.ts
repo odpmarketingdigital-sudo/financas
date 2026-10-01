@@ -30,6 +30,8 @@ export interface Expense {
   status: ExpenseStatus;
   payment_date: string | null;
   reference_month: string;
+  /** Conta bancária/carteira usada no pagamento (`bank_accounts.id`). */
+  bank_account_id: string | null;
   created_at: string;
 }
 
@@ -44,6 +46,8 @@ export interface Receivable {
   status: ReceivableStatus;
   payment_date: string | null;
   reference_month: string;
+  /** Conta bancária/carteira usada no recebimento (`bank_accounts.id`). */
+  bank_account_id: string | null;
   created_at: string;
 }
 
@@ -51,6 +55,16 @@ export interface BankAccount {
   id: string;
   user_id: string;
   name: string;
+  /**
+   * Saldo de abertura informado pelo usuário — base do saldo real calculado.
+   * Opcional para tolerar bases que ainda não receberam a migração do schema
+   * (`supabase/schema.sql`), nas quais `balance` ainda é o saldo informado.
+   */
+  initial_balance?: number | null;
+  /**
+   * Saldo real calculado: `initial_balance` + recebíveis recebidos −
+   * despesas pagas vinculadas à conta. Atualizado a cada movimentação.
+   */
   balance: number;
   /** `true` quando a conta representa dinheiro físico/espécie (carteira). */
   is_cash: boolean;

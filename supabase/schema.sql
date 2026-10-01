@@ -279,3 +279,45 @@ begin
       check (type in ('expense', 'receivable'));
   end if;
 end $$;
+
+-- =====================
+-- MIGRAÇÃO: CONTA BANCÁRIA / DINHEIRO EM DESPESAS E RECEBÍVEIS
+-- `bank_account_id` aponta para a conta/carteira em `bank_accounts`.
+-- A coluna nasce nula para não invalidar registros antigos; a
+-- obrigatoriedade é aplicada nos formulários da aplicação.
+-- =====================
+alter table public.expenses
+  add column if not exists bank_account_id uuid
+    references public.bank_accounts(id) on delete set null;
+
+alter table public.receivables
+  add column if not exists bank_account_id uuid
+    references public.bank_accounts(id) on delete set null;
+
+create index if not exists expenses_bank_account_idx
+  on public.expenses (bank_account_id);
+
+create index if not exists receivables_bank_account_idx
+  on public.receivables (bank_account_id);
+
+-- =====================
+-- MIGRAÇÃO: SALDO INICIAL E SALDO REAL CALCULADO DAS CONTAS
+-- `initial_balance` guarda o saldo de abertura informado pelo usuário e é a
+-- base do cálculo. `balance` passa a ser o saldo real, recalculado pela
+-- aplicação a cada movimentação (despesas/recebíveis) e na abertura das
+-- telas que exibem saldos:
+--   balance = initial_balance + recebíveis recebidos − despesas pagas
+-- =====================
+alter table public.bank_accounts
+  add column if not exists initial_balance numeric(12, 2);
+
+-- Contas criadas antes da migração usam o saldo atual como saldo inicial.
+update public.bank_accounts
+  set initial_balance = balance
+  where initial_balance is null;
+
+alter table public.bank_accounts
+  alter column initial_balance set default 0;
+
+alter table public.bank_accounts
+  alter column initial_balance set not null;

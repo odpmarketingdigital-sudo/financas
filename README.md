@@ -9,6 +9,9 @@ Aplicação educacional de **finanças pessoais** para ajudar famílias a organi
 - Painel com resumos: a pagar, pago, a receber, recebido e resultados líquido previsto/realizado
 - Gestão de despesas, recebíveis, clientes e categorias
 - Cadastro de bancos e carteiras de dinheiro (com saldo por conta e marcação de dinheiro físico)
+- Saldo real calculado por conta, atualizado automaticamente ao cadastrar/editar/excluir despesas e recebíveis: `saldo inicial + recebíveis recebidos − despesas pagas`
+- Seleção obrigatória da conta bancária / dinheiro nos formulários de despesas e recebíveis (contas vindas de `bank_accounts`)
+- Seletor inteligente de bancos no cadastro de contas: lista padrão com as cores das marcas, busca sem acentos, preenchimento automático do nome e consulta de bancos menores na [BrasilAPI](https://brasilapi.com.br/docs#tag/Banks)
 - Fluxo de caixa diário do mês: entradas, saídas, saldo do dia e saldo acumulado (página Caixa)
 
 ## Pré-requisitos
@@ -39,6 +42,8 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=sua-chave-anon-aqui
 
 [`supabase/schema.sql`](./supabase/schema.sql)
 
+> O script é idempotente: em projetos já existentes, execute-o novamente para aplicar as migrações (por exemplo, a coluna `bank_accounts.initial_balance`, base do saldo real calculado).
+
 4. Em Authentication → Providers, deixe o provedor **Email** habilitado. Para desenvolvimento, você pode desativar a confirmação de e-mail em Authentication → Settings.
 
 5. Rode o servidor de desenvolvimento:
@@ -63,9 +68,11 @@ src/
       configuracoes/
     caixa/              # Fluxo de caixa diário do mês
   components/           # UI e módulos de negócio
-  constants/            # Categorias padrão (mescladas com as do banco)
+  constants/            # Categorias e bancos padrão (mesclados com os do banco)
   contexts/             # Seletor de mês/ano
+  lib/                  # Regras e utilitários (ex.: merge de bancos/categorias)
   lib/supabase/         # Clientes browser/server
+  services/             # Integrações externas (BrasilAPI)
 supabase/schema.sql     # Tabelas + RLS
 ```
 

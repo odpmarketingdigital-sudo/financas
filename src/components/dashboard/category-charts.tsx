@@ -47,6 +47,74 @@ function colorFor(index: number) {
   return CATEGORY_COLORS[index % CATEGORY_COLORS.length];
 }
 
+interface SliceLabelProps {
+  cx?: number;
+  cy?: number;
+  midAngle?: number;
+  innerRadius?: number;
+  outerRadius?: number;
+  percent?: number;
+}
+
+/** Rótulo de porcentagem dentro de cada fatia (oculta fatias < 5% para não poluir). */
+function renderSlicePercentLabel(props: SliceLabelProps) {
+  const { cx = 0, cy = 0, midAngle = 0, innerRadius = 0, outerRadius = 0, percent = 0 } = props;
+  if (percent < 0.05) return null;
+  const radius = innerRadius + (outerRadius - innerRadius) / 2;
+  const radians = (-midAngle * Math.PI) / 180;
+  const x = cx + radius * Math.cos(radians);
+  const y = cy + radius * Math.sin(radians);
+  return (
+    <text
+      x={x}
+      y={y}
+      fill="#ffffff"
+      fontSize={11}
+      fontWeight={700}
+      textAnchor="middle"
+      dominantBaseline="central"
+      stroke="rgba(15, 23, 42, 0.45)"
+      strokeWidth={3}
+      paintOrder="stroke"
+    >
+      {`${(percent * 100).toFixed(1).replace(".", ",")}%`}
+    </text>
+  );
+}
+
+/** Tooltip com valor em R$ + participação percentual da categoria. */
+function CategoryTooltip({
+  active,
+  payload,
+  total,
+}: {
+  active?: boolean;
+  payload?: { name: string; value: number | string }[];
+  total: number;
+}) {
+  if (!active || !payload?.length) return null;
+  const item = payload[0];
+  const value = Number(item.value);
+  const percent = total > 0 ? (value / total) * 100 : 0;
+  return (
+    <div
+      style={{
+        borderRadius: 12,
+        border: "1px solid #e2e8f0",
+        background: "#ffffff",
+        padding: "8px 12px",
+        fontSize: 12,
+        boxShadow: "0 8px 24px rgba(15, 23, 42, 0.08)",
+      }}
+    >
+      <p style={{ fontWeight: 600, color: "#0f172a" }}>{item.name}</p>
+      <p style={{ color: "#475569" }}>
+        {formatCurrency(value)} • {percent.toFixed(1).replace(".", ",")}%
+      </p>
+    </div>
+  );
+}
+
 /** Agrupa os lançamentos por categoria, somando os valores e ordenando do maior para o menor. */
 function groupByCategory(
   rows: { category: string | null; value: number }[],
@@ -128,7 +196,7 @@ function CategoryPieCard({ title, data, emptyMessage }: CategoryPieCardProps) {
           {emptyMessage}
         </p>
       ) : (
-        <div className="mt-4 h-64 w-full">
+        <div className="mt-4 h-80 w-full">
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
@@ -142,25 +210,25 @@ function CategoryPieCard({ title, data, emptyMessage }: CategoryPieCardProps) {
                 paddingAngle={2}
                 stroke="#ffffff"
                 strokeWidth={2}
+                labelLine={false}
+                label={renderSlicePercentLabel}
               >
                 {data.map((item, index) => (
                   <Cell key={item.name} fill={colorFor(index)} />
                 ))}
               </Pie>
-              <Tooltip
-                formatter={(value) => formatCurrency(Number(value))}
-                contentStyle={{
-                  borderRadius: 12,
-                  border: "1px solid #e2e8f0",
-                  fontSize: 12,
-                  boxShadow: "0 8px 24px rgba(15, 23, 42, 0.08)",
-                }}
-              />
+              <Tooltip content={<CategoryTooltip total={total} />} />
               <Legend
                 verticalAlign="bottom"
                 align="center"
                 iconType="circle"
                 wrapperStyle={{ fontSize: 12, paddingTop: 8 }}
+                formatter={(value, entry) => {
+                  const itemValue = (entry?.payload as CategoryDatum | undefined)?.value;
+                  const percent =
+                    total > 0 ? (Number(itemValue ?? 0) / total) * 100 : 0;
+                  return `${value} • ${percent.toFixed(1).replace(".", ",")}%`;
+                }}
               />
             </PieChart>
           </ResponsiveContainer>

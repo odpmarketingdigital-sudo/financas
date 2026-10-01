@@ -1,11 +1,18 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useMonth } from "@/contexts/month-context";
 import { createClient } from "@/lib/supabase/client";
 import { EXPENSE_CATEGORIES } from "@/constants/categories";
+import {
+  fetchBankAccounts,
+  findBankAccountName,
+  recalculateBankAccountBalances,
+  toBankAccountOptions,
+} from "@/lib/bank-accounts";
 import { mergeCategories, toCategoryOptions } from "@/lib/categories";
-import type { Expense, ExpenseStatus } from "@/lib/types";
+import type { BankAccount, Expense, ExpenseStatus } from "@/lib/types";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +29,7 @@ interface ExpenseFormState {
   due_date: string;
   status: ExpenseStatus;
   payment_date: string;
+  bank_account_id: string;
 }
 
 const emptyForm: ExpenseFormState = {
@@ -31,11 +39,12 @@ const emptyForm: ExpenseFormState = {
   due_date: "",
   status: "nao_paga",
   payment_date: "",
+  bank_account_id: "",
 };
 
 async function fetchExpensesData(referenceMonth: string) {
   const supabase = createClient();
-  const [expRes, catRes] = await Promise.all([
+  const [expRes, catRes, accounts] = await Promise.all([
     supabase
       .from("expenses")
       .select("*")
@@ -46,6 +55,7 @@ async function fetchExpensesData(referenceMonth: string) {
       .select("name")
       .eq("type", "expense")
       .order("name", { ascending: true }),
+    fetchBankAccounts(),
   ]);
 
   return {
@@ -53,6 +63,7 @@ async function fetchExpensesData(referenceMonth: string) {
     customCategories: ((catRes.data ?? []) as { name: string }[]).map(
       (category) => category.name,
     ),
+    accounts,
   };
 }
 
@@ -60,6 +71,7 @@ export function ExpensesManager() {
   const { referenceMonth } = useMonth();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [customCategories, setCustomCategories] = useState<string[]>([]);
+  const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
@@ -72,10 +84,11 @@ export function ExpensesManager() {
     let cancelled = false;
 
     fetchExpensesData(referenceMonth).then(
-      ({ expenses: next, customCategories: custom }) => {
+      ({ expenses: next, customCategories: custom, accounts: nextAccounts }) => {
         if (cancelled) return;
         setExpenses(next);
         setCustomCategories(custom);
+        setAccounts(nextAccounts);
         setLoading(false);
       },
     );
@@ -108,6 +121,7 @@ export function ExpensesManager() {
       due_date: expense.due_date,
       status: expense.status,
       payment_date: expense.payment_date ?? "",
+      bank_account_id: expense.bank_account_id ?? "",
     });
     setError(null);
     setModalOpen(true);
@@ -119,6 +133,11 @@ export function ExpensesManager() {
 
     if (form.status === "paga" && !form.payment_date) {
       setError("Data do pagamento é obrigatória quando o status é Paga.");
+      return;
+    }
+
+    if (!form.bank_account_id) {
+      setError("Selecione a conta bancária / dinheiro.");
       return;
     }
 
@@ -142,28 +161,41 @@ export function ExpensesManager() {
       status: form.status,
       payment_date: form.status === "paga" ? form.payment_date : null,
       reference_month: referenceMonth,
+      bank_account_id: form.bank_account_id,
       user_id: user.id,
     };
+
+    // Conta usada antes da edição — o saldo dela também precisa ser reajustado.
+    const previousAccountId = editing?.bank_account_id ?? null;
 
     const result = editing
       ? await supabase.from("expenses").update(payload).eq("id", editing.id)
       : await supabase.from("expenses").insert(payload);
 
-    setSaving(false);
-
     if (result.error) {
+      setSaving(false);
       setError(result.error.message);
       return;
     }
 
+    // Saldo real = saldo inicial + recebidos − pagos. Recalcula a conta de
+    // origem e a de destino (cobre troca de banco e mudança de valor/status).
+    await recalculateBankAccountBalances([
+      previousAccountId,
+      payload.bank_account_id,
+    ]);
+
+    setSaving(false);
     setModalOpen(false);
     refresh();
   }
 
-  async function handleDelete(id: string) {
+  async function handleDelete(expense: Expense) {
     if (!confirm("Excluir esta despesa?")) return;
     const supabase = createClient();
-    await supabase.from("expenses").delete().eq("id", id);
+    await supabase.from("expenses").delete().eq("id", expense.id);
+    // Desfaz a saída do saldo da conta vinculada à despesa excluída.
+    await recalculateBankAccountBalances([expense.bank_account_id]);
     refresh();
   }
 
@@ -221,6 +253,13 @@ export function ExpensesManager() {
                         {formatDate(expense.due_date)}
                       </p>
                     </div>
+                    <div className="col-span-2">
+                      <p className="text-xs text-slate-400">Conta</p>
+                      <p className="text-slate-700">
+                        {findBankAccountName(accounts, expense.bank_account_id) ??
+                          "—"}
+                      </p>
+                    </div>
                     {expense.payment_date && (
                       <div className="col-span-2">
                         <p className="text-xs text-slate-400">Pagamento</p>
@@ -244,7 +283,7 @@ export function ExpensesManager() {
                       variant="ghost"
                       size="sm"
                       className="h-8 w-8 p-0 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
-                      onClick={() => handleDelete(expense.id)}
+                      onClick={() => handleDelete(expense)}
                       aria-label="Excluir"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -263,6 +302,7 @@ export function ExpensesManager() {
                     <th className="px-4 py-3 font-medium">Categoria</th>
                     <th className="px-4 py-3 font-medium">Valor</th>
                     <th className="px-4 py-3 font-medium">Vencimento</th>
+                    <th className="px-4 py-3 font-medium">Conta</th>
                     <th className="px-4 py-3 font-medium">Status</th>
                     <th className="px-4 py-3 font-medium">Pagamento</th>
                     <th className="px-4 py-3 font-medium text-right">Ações</th>
@@ -282,6 +322,10 @@ export function ExpensesManager() {
                       </td>
                       <td className="px-4 py-3 text-slate-600">
                         {formatDate(expense.due_date)}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {findBankAccountName(accounts, expense.bank_account_id) ??
+                          "—"}
                       </td>
                       <td className="px-4 py-3">
                         <Badge
@@ -310,7 +354,7 @@ export function ExpensesManager() {
                             variant="ghost"
                             size="sm"
                             className="h-8 w-8 p-0 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
-                            onClick={() => handleDelete(expense.id)}
+                            onClick={() => handleDelete(expense)}
                             aria-label="Excluir"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
@@ -354,6 +398,32 @@ export function ExpensesManager() {
               mergeCategories(EXPENSE_CATEGORIES, customCategories),
             )}
           />
+          <Select
+            id="bank_account_id"
+            label="Conta bancária / Dinheiro"
+            required
+            placeholder={
+              accounts.length === 0 ? "Nenhuma conta cadastrada" : "Selecione"
+            }
+            disabled={accounts.length === 0}
+            value={form.bank_account_id}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, bank_account_id: e.target.value }))
+            }
+            options={toBankAccountOptions(accounts)}
+          />
+          {accounts.length === 0 && (
+            <p className="-mt-2 text-xs text-slate-500">
+              Nenhuma conta cadastrada.{" "}
+              <Link
+                href="/dashboard/bancos"
+                className="font-medium text-teal-700 underline"
+              >
+                Cadastre uma conta ou carteira
+              </Link>{" "}
+              para vincular a despesa.
+            </p>
+          )}
           <Input
             id="amount"
             label="Valor"

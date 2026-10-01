@@ -1,11 +1,18 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useMonth } from "@/contexts/month-context";
 import { createClient } from "@/lib/supabase/client";
 import { RECEIVABLE_CATEGORIES } from "@/constants/categories";
+import {
+  fetchBankAccounts,
+  findBankAccountName,
+  recalculateBankAccountBalances,
+  toBankAccountOptions,
+} from "@/lib/bank-accounts";
 import { mergeCategories, toCategoryOptions } from "@/lib/categories";
-import type { Receivable, ReceivableStatus } from "@/lib/types";
+import type { BankAccount, Receivable, ReceivableStatus } from "@/lib/types";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +28,7 @@ interface ReceivableFormState {
   amount: string;
   date: string;
   status: ReceivableStatus;
+  bank_account_id: string;
 }
 
 const emptyForm: ReceivableFormState = {
@@ -29,11 +37,12 @@ const emptyForm: ReceivableFormState = {
   amount: "",
   date: "",
   status: "a_receber",
+  bank_account_id: "",
 };
 
 async function fetchReceivablesData(referenceMonth: string) {
   const supabase = createClient();
-  const [recRes, catRes] = await Promise.all([
+  const [recRes, catRes, accounts] = await Promise.all([
     supabase
       .from("receivables")
       .select("*")
@@ -44,6 +53,7 @@ async function fetchReceivablesData(referenceMonth: string) {
       .select("name")
       .eq("type", "receivable")
       .order("name", { ascending: true }),
+    fetchBankAccounts(),
   ]);
 
   return {
@@ -51,6 +61,7 @@ async function fetchReceivablesData(referenceMonth: string) {
     customCategories: ((catRes.data ?? []) as { name: string }[]).map(
       (category) => category.name,
     ),
+    accounts,
   };
 }
 
@@ -58,6 +69,7 @@ export function ReceivablesManager() {
   const { referenceMonth } = useMonth();
   const [receivables, setReceivables] = useState<Receivable[]>([]);
   const [customCategories, setCustomCategories] = useState<string[]>([]);
+  const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
@@ -70,10 +82,15 @@ export function ReceivablesManager() {
     let cancelled = false;
 
     fetchReceivablesData(referenceMonth).then(
-      ({ receivables: next, customCategories: custom }) => {
+      ({
+        receivables: next,
+        customCategories: custom,
+        accounts: nextAccounts,
+      }) => {
         if (cancelled) return;
         setReceivables(next);
         setCustomCategories(custom);
+        setAccounts(nextAccounts);
         setLoading(false);
       },
     );
@@ -108,6 +125,7 @@ export function ReceivablesManager() {
           ? item.payment_date
           : item.due_date,
       status: item.status,
+      bank_account_id: item.bank_account_id ?? "",
     });
     setError(null);
     setModalOpen(true);
@@ -124,6 +142,11 @@ export function ReceivablesManager() {
 
     if (!form.date) {
       setError("Informe a data prevista / recebimento.");
+      return;
+    }
+
+    if (!form.bank_account_id) {
+      setError("Selecione a conta bancária / dinheiro.");
       return;
     }
 
@@ -152,28 +175,41 @@ export function ReceivablesManager() {
       status: form.status,
       payment_date: isReceived ? form.date : null,
       reference_month: referenceMonth,
+      bank_account_id: form.bank_account_id,
       user_id: user.id,
     };
+
+    // Conta usada antes da edição — o saldo dela também precisa ser reajustado.
+    const previousAccountId = editing?.bank_account_id ?? null;
 
     const result = editing
       ? await supabase.from("receivables").update(payload).eq("id", editing.id)
       : await supabase.from("receivables").insert(payload);
 
-    setSaving(false);
-
     if (result.error) {
+      setSaving(false);
       setError(result.error.message);
       return;
     }
 
+    // Saldo real = saldo inicial + recebidos − pagos. Recalcula a conta de
+    // origem e a de destino (cobre troca de banco e mudança de valor/status).
+    await recalculateBankAccountBalances([
+      previousAccountId,
+      payload.bank_account_id,
+    ]);
+
+    setSaving(false);
     setModalOpen(false);
     refresh();
   }
 
-  async function handleDelete(id: string) {
+  async function handleDelete(item: Receivable) {
     if (!confirm("Excluir este recebível?")) return;
     const supabase = createClient();
-    await supabase.from("receivables").delete().eq("id", id);
+    await supabase.from("receivables").delete().eq("id", item.id);
+    // Desfaz a entrada do saldo da conta vinculada ao recebível excluído.
+    await recalculateBankAccountBalances([item.bank_account_id]);
     refresh();
   }
 
@@ -237,6 +273,13 @@ export function ReceivablesManager() {
                         )}
                       </p>
                     </div>
+                    <div className="col-span-2">
+                      <p className="text-xs text-slate-400">Conta</p>
+                      <p className="text-slate-700">
+                        {findBankAccountName(accounts, item.bank_account_id) ??
+                          "—"}
+                      </p>
+                    </div>
                   </div>
                   <div className="flex justify-end gap-1 border-t border-slate-50 pt-2">
                     <Button
@@ -252,7 +295,7 @@ export function ReceivablesManager() {
                       variant="ghost"
                       size="sm"
                       className="h-8 w-8 p-0 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
-                      onClick={() => handleDelete(item.id)}
+                      onClick={() => handleDelete(item)}
                       aria-label="Excluir"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -273,6 +316,7 @@ export function ReceivablesManager() {
                     <th className="px-4 py-3 font-medium">
                       Data prevista / recebimento
                     </th>
+                    <th className="px-4 py-3 font-medium">Conta</th>
                     <th className="px-4 py-3 font-medium">Status</th>
                     <th className="px-4 py-3 font-medium text-right">Ações</th>
                   </tr>
@@ -295,6 +339,10 @@ export function ReceivablesManager() {
                             ? item.payment_date
                             : item.due_date,
                         )}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {findBankAccountName(accounts, item.bank_account_id) ??
+                          "—"}
                       </td>
                       <td className="px-4 py-3">
                         <Badge
@@ -322,7 +370,7 @@ export function ReceivablesManager() {
                             variant="ghost"
                             size="sm"
                             className="h-8 w-8 p-0 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
-                            onClick={() => handleDelete(item.id)}
+                            onClick={() => handleDelete(item)}
                             aria-label="Excluir"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
@@ -357,6 +405,32 @@ export function ReceivablesManager() {
               mergeCategories(RECEIVABLE_CATEGORIES, customCategories),
             )}
           />
+          <Select
+            id="bank_account_id"
+            label="Conta bancária / Dinheiro"
+            required
+            placeholder={
+              accounts.length === 0 ? "Nenhuma conta cadastrada" : "Selecione"
+            }
+            disabled={accounts.length === 0}
+            value={form.bank_account_id}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, bank_account_id: e.target.value }))
+            }
+            options={toBankAccountOptions(accounts)}
+          />
+          {accounts.length === 0 && (
+            <p className="-mt-2 text-xs text-slate-500">
+              Nenhuma conta cadastrada.{" "}
+              <Link
+                href="/dashboard/bancos"
+                className="font-medium text-teal-700 underline"
+              >
+                Cadastre uma conta ou carteira
+              </Link>{" "}
+              para vincular o recebível.
+            </p>
+          )}
           <Input
             id="description"
             label="Descrição"

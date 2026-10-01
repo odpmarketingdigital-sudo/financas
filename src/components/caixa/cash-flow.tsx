@@ -13,13 +13,11 @@ import {
   toDateKey,
 } from "@/lib/utils";
 import { Card, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import {
   ArrowDownCircle,
   ArrowUpCircle,
   Loader2,
   PiggyBank,
-  Scale,
 } from "lucide-react";
 
 interface CashFlowDay {
@@ -27,7 +25,6 @@ interface CashFlowDay {
   date: string;
   entries: number;
   exits: number;
-  dayBalance: number;
   accumulated: number;
 }
 
@@ -45,17 +42,62 @@ const emptyData: CashFlowData = {
   totalExits: 0,
 };
 
+/** Linha de despesa paga usada no Livro Caixa (`status = 'paga'`). */
+interface PaidExpenseRow {
+  amount: number | string;
+  due_date: string;
+  payment_date: string | null;
+}
+
+/** Linha de recebível recebido usada no Livro Caixa (`status = 'recebido'`). */
+interface ReceivedReceivableRow {
+  amount_due: number | string;
+  amount_paid: number | string;
+  due_date: string;
+  payment_date: string | null;
+}
+
+/** Linha de conta usada no saldo inicial (tolerante à migração do schema). */
+interface OpeningAccountRow {
+  balance: number | null;
+  initial_balance?: number | null;
+}
+
+/** Arredonda para duas casas e evita ruído de ponto flutuante. */
+function roundCurrency(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/**
+ * Converte um valor monetário em número finito. Nulos, indefinidos ou strings
+ * inválidas viram `0`, garantindo que tabelas vazias resultem em saldo `0` e
+ * nunca em `NaN`.
+ */
+function toAmount(value: number | string | null | undefined): number {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/**
+ * Data em que a movimentação afeta o caixa: a data de pagamento/recebimento
+ * (`payment_date`) e, na ausência dela, a data de vencimento (`due_date`) —
+ * usada para posicionar cada lançamento no dia correto do Livro Caixa.
+ */
+function cashDate(row: { due_date: string; payment_date: string | null }): string {
+  return row.payment_date || row.due_date;
+}
+
 /**
  * Valor considerado para cada recebível: o valor efetivamente recebido
  * (`amount_paid`) quando houver, senão o previsto (`amount_due`) — mesma
  * convenção usada nos cartões de resumo do Painel.
  */
 function receivableAmount(receivable: {
-  amount_due: number;
-  amount_paid: number;
+  amount_due: number | string;
+  amount_paid: number | string;
 }): number {
-  const paid = Number(receivable.amount_paid);
-  return paid > 0 ? paid : Number(receivable.amount_due);
+  const paid = toAmount(receivable.amount_paid);
+  return paid > 0 ? paid : toAmount(receivable.amount_due);
 }
 
 /** Verde para valores positivos, vermelho para negativos e cinza para zero. */
@@ -65,35 +107,87 @@ function balanceTone(value: number): string {
   return "text-slate-500";
 }
 
-function balanceBadgeVariant(value: number): "success" | "danger" | "neutral" {
-  if (value > 0) return "success";
-  if (value < 0) return "danger";
-  return "neutral";
+/**
+ * Saldo inicial do mês selecionado:
+ *
+ *   Σ initial_balance (contas e carteiras)
+ *   + recebíveis recebidos com data anterior ao dia 1 do mês
+ *   − despesas pagas com data anterior ao dia 1 do mês
+ *
+ * Considera apenas o que já foi efetivado no caixa (despesas pagas e
+ * recebíveis recebidos), posicionado pela data de pagamento/recebimento — ou
+ * pelo vencimento quando `payment_date` não estiver preenchido.
+ */
+function computeOpeningBalance(
+  referenceMonth: string,
+  accounts: readonly OpeningAccountRow[],
+  expenses: readonly PaidExpenseRow[],
+  receivables: readonly ReceivedReceivableRow[],
+): number {
+  const { year, month } = parseReferenceMonth(referenceMonth);
+  const monthStart = toDateKey(year, month, 1);
+
+  const accountsBalance = accounts.reduce(
+    (sum, account) => sum + toAmount(account.initial_balance ?? account.balance),
+    0,
+  );
+
+  const receivedBefore = receivables.reduce(
+    (sum, receivable) =>
+      cashDate(receivable) < monthStart
+        ? sum + receivableAmount(receivable)
+        : sum,
+    0,
+  );
+
+  const paidBefore = expenses.reduce(
+    (sum, expense) =>
+      cashDate(expense) < monthStart ? sum + toAmount(expense.amount) : sum,
+    0,
+  );
+
+  return roundCurrency(accountsBalance + receivedBefore - paidBefore);
 }
 
-/** Gera todos os dias do mês com entradas, saídas e saldos acumulados. */
+/**
+ * Gera todos os dias do mês com entradas, saídas e saldos acumulados.
+ *
+ * Entram apenas os lançamentos efetivados no caixa — despesas pagas e
+ * recebíveis recebidos — agrupados pela data de pagamento/recebimento. O saldo
+ * é calculado sequencialmente: no dia 1 é `saldoInicial + entradas − saídas` e,
+ * nos dias seguintes, o saldo acumulado anterior incorpora o resultado do dia.
+ * No último dia o acumulado equivale a `saldoInicial + totalEntradas −
+ * totalSaídas`.
+ */
 function buildCashFlow(
   referenceMonth: string,
-  expenses: { amount: number; due_date: string }[],
-  receivables: { amount_due: number; amount_paid: number; due_date: string }[],
   openingBalance: number,
+  expenses: readonly PaidExpenseRow[],
+  receivables: readonly ReceivedReceivableRow[],
 ): CashFlowData {
   const { year, month } = parseReferenceMonth(referenceMonth);
+  const daysInMonth = getDaysInMonth(year, month);
+  const monthStart = toDateKey(year, month, 1);
+  const monthEnd = toDateKey(year, month, daysInMonth);
 
   const entriesByDay = new Map<string, number>();
   const exitsByDay = new Map<string, number>();
 
   for (const receivable of receivables) {
+    const date = cashDate(receivable);
+    if (date < monthStart || date > monthEnd) continue;
     entriesByDay.set(
-      receivable.due_date,
-      (entriesByDay.get(receivable.due_date) ?? 0) + receivableAmount(receivable),
+      date,
+      (entriesByDay.get(date) ?? 0) + receivableAmount(receivable),
     );
   }
 
   for (const expense of expenses) {
+    const date = cashDate(expense);
+    if (date < monthStart || date > monthEnd) continue;
     exitsByDay.set(
-      expense.due_date,
-      (exitsByDay.get(expense.due_date) ?? 0) + Number(expense.amount),
+      date,
+      (exitsByDay.get(date) ?? 0) + toAmount(expense.amount),
     );
   }
 
@@ -102,17 +196,16 @@ function buildCashFlow(
   let totalEntries = 0;
   let totalExits = 0;
 
-  for (let day = 1; day <= getDaysInMonth(year, month); day += 1) {
+  for (let day = 1; day <= daysInMonth; day += 1) {
     const date = toDateKey(year, month, day);
-    const entries = entriesByDay.get(date) ?? 0;
-    const exits = exitsByDay.get(date) ?? 0;
-    const dayBalance = entries - exits;
+    const entries = roundCurrency(entriesByDay.get(date) ?? 0);
+    const exits = roundCurrency(exitsByDay.get(date) ?? 0);
 
-    accumulated += dayBalance;
-    totalEntries += entries;
-    totalExits += exits;
+    accumulated = roundCurrency(accumulated + entries - exits);
+    totalEntries = roundCurrency(totalEntries + entries);
+    totalExits = roundCurrency(totalExits + exits);
 
-    days.push({ date, entries, exits, dayBalance, accumulated });
+    days.push({ date, entries, exits, accumulated });
   }
 
   return { days, openingBalance, totalEntries, totalExits };
@@ -129,32 +222,38 @@ export function CashFlow() {
     async function load() {
       const supabase = createClient();
 
+      // Apenas o que foi efetivado no caixa: despesas pagas e recebíveis
+      // recebidos. Não filtramos por `reference_month` porque o Livro Caixa se
+      // posiciona pela data de pagamento/recebimento — que pode ser diferente
+      // do mês de referência — e o saldo inicial depende dos meses anteriores.
       const [expensesRes, receivablesRes, accountsRes] = await Promise.all([
         supabase
           .from("expenses")
-          .select("amount, due_date")
-          .eq("reference_month", referenceMonth),
+          .select("amount, due_date, payment_date")
+          .eq("status", "paga"),
         supabase
           .from("receivables")
-          .select("amount_due, amount_paid, due_date")
-          .eq("reference_month", referenceMonth),
-        supabase.from("bank_accounts").select("balance"),
+          .select("amount_due, amount_paid, due_date, payment_date")
+          .eq("status", "recebido"),
+        // Saldo de abertura das contas (base do saldo inicial calculado).
+        supabase.from("bank_accounts").select("balance, initial_balance"),
       ]);
 
       if (cancelled) return;
 
-      const openingBalance = (accountsRes.data ?? []).reduce(
-        (sum, account) => sum + Number(account.balance),
-        0,
+      const expenses = (expensesRes.data ?? []) as PaidExpenseRow[];
+      const receivables = (receivablesRes.data ??
+        []) as ReceivedReceivableRow[];
+
+      const openingBalance = computeOpeningBalance(
+        referenceMonth,
+        (accountsRes.data ?? []) as OpeningAccountRow[],
+        expenses,
+        receivables,
       );
 
       setData(
-        buildCashFlow(
-          referenceMonth,
-          expensesRes.data ?? [],
-          receivablesRes.data ?? [],
-          openingBalance,
-        ),
+        buildCashFlow(referenceMonth, openingBalance, expenses, receivables),
       );
       setLoading(false);
     }
@@ -167,9 +266,10 @@ export function CashFlow() {
 
   const { year, month } = parseReferenceMonth(referenceMonth);
   const monthLabel = `${MONTH_NAMES[month - 1]} de ${year}`;
-  const result = data.totalEntries - data.totalExits;
-  const finalBalance = data.openingBalance + result;
-  const resultNegative = result < 0;
+  const finalBalance =
+    data.days.length > 0
+      ? data.days[data.days.length - 1].accumulated
+      : data.openingBalance;
 
   if (loading) {
     return (
@@ -182,7 +282,7 @@ export function CashFlow() {
   return (
     <div className="space-y-4">
       {/* Resumo geral do mês */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-3">
         <Card>
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -191,7 +291,7 @@ export function CashFlow() {
                 {formatCurrency(data.openingBalance)}
               </p>
               <p className="mt-1 text-xs text-slate-400">
-                Soma das contas e carteiras
+                Contas + recebidos − pagos até o mês
               </p>
             </div>
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700">
@@ -207,7 +307,9 @@ export function CashFlow() {
               <p className="mt-2 text-2xl font-semibold tracking-tight text-emerald-600">
                 {formatCurrency(data.totalEntries)}
               </p>
-              <p className="mt-1 text-xs text-slate-400">Recebíveis do mês</p>
+              <p className="mt-1 text-xs text-slate-400">
+                Recebíveis recebidos
+              </p>
             </div>
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
               <ArrowUpCircle className="h-5 w-5" />
@@ -222,39 +324,10 @@ export function CashFlow() {
               <p className="mt-2 text-2xl font-semibold tracking-tight text-rose-600">
                 {formatCurrency(data.totalExits)}
               </p>
-              <p className="mt-1 text-xs text-slate-400">Despesas do mês</p>
+              <p className="mt-1 text-xs text-slate-400">Despesas pagas</p>
             </div>
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-600">
               <ArrowDownCircle className="h-5 w-5" />
-            </div>
-          </div>
-        </Card>
-
-        <Card className={cn(resultNegative && "border-rose-200 bg-rose-50/40")}>
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <CardTitle>Resultado líquido do mês</CardTitle>
-              <p
-                className={cn(
-                  "mt-2 text-2xl font-semibold tracking-tight",
-                  resultNegative ? "text-rose-600" : "text-emerald-600",
-                )}
-              >
-                {formatCurrency(result)}
-              </p>
-              <p className="mt-1 text-xs text-slate-400">
-                Entradas − saídas
-              </p>
-            </div>
-            <div
-              className={cn(
-                "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
-                resultNegative
-                  ? "bg-rose-100 text-rose-600"
-                  : "bg-teal-50 text-teal-700",
-              )}
-            >
-              <Scale className="h-5 w-5" />
             </div>
           </div>
         </Card>
@@ -264,21 +337,17 @@ export function CashFlow() {
       <Card className="overflow-hidden p-0">
         <p className="border-b border-slate-100 px-4 py-3 text-xs text-slate-400 md:px-5">
           Todos os {data.days.length} dias de {monthLabel} · entradas e saídas
-          agrupadas pela data de vencimento de cada lançamento.
+          agrupadas pela data de pagamento de cada lançamento (despesas pagas e
+          recebíveis recebidos).
         </p>
 
         {/* Mobile: cards diários */}
         <ul className="divide-y divide-slate-100 md:hidden">
           {data.days.map((day) => (
             <li key={day.date} className="space-y-3 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <p className="font-medium text-slate-900">
-                  {formatDate(day.date)}
-                </p>
-                <Badge variant={balanceBadgeVariant(day.dayBalance)}>
-                  {formatCurrency(day.dayBalance)}
-                </Badge>
-              </div>
+              <p className="font-medium text-slate-900">
+                {formatDate(day.date)}
+              </p>
               <div className="grid grid-cols-2 gap-2 text-sm">
                 <div>
                   <p className="text-xs text-slate-400">Entradas</p>
@@ -311,8 +380,14 @@ export function CashFlow() {
         </ul>
 
         {/* Desktop: tabela */}
-        <div className="hidden overflow-x-auto md:block">
-          <table className="w-full text-left text-sm">
+        <div className="hidden md:block">
+          <table className="w-full table-fixed text-left text-sm">
+            <colgroup>
+              <col className="w-[25%]" />
+              <col className="w-[25%]" />
+              <col className="w-[25%]" />
+              <col className="w-[25%]" />
+            </colgroup>
             <thead className="border-b border-slate-100 bg-slate-50/80 text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-4 py-3 font-medium">Data</th>
@@ -321,9 +396,6 @@ export function CashFlow() {
                 </th>
                 <th className="px-4 py-3 text-right font-medium">
                   Saídas (R$)
-                </th>
-                <th className="px-4 py-3 text-right font-medium">
-                  Saldo do dia
                 </th>
                 <th className="px-4 py-3 text-right font-medium">
                   Saldo acumulado
@@ -344,14 +416,6 @@ export function CashFlow() {
                   </td>
                   <td
                     className={cn(
-                      "px-4 py-3 text-right font-medium tabular-nums",
-                      balanceTone(day.dayBalance),
-                    )}
-                  >
-                    {formatCurrency(day.dayBalance)}
-                  </td>
-                  <td
-                    className={cn(
                       "px-4 py-3 text-right font-semibold tabular-nums",
                       balanceTone(day.accumulated),
                     )}
@@ -369,14 +433,6 @@ export function CashFlow() {
                 </td>
                 <td className="px-4 py-3 text-right tabular-nums text-rose-700">
                   {formatCurrency(data.totalExits)}
-                </td>
-                <td
-                  className={cn(
-                    "px-4 py-3 text-right tabular-nums",
-                    balanceTone(result),
-                  )}
-                >
-                  {formatCurrency(result)}
                 </td>
                 <td
                   className={cn(
