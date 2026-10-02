@@ -10,7 +10,7 @@ import type { BankAccount } from "@/lib/types";
  * (`src/components/bancos/banks-manager.tsx`).
  *
  * Este módulo também concentra o recálculo do saldo real de cada conta a
- * partir das movimentações de despesas e recebíveis
+ * partir das movimentações de despesas e entradas
  * (`recalculateBankAccountBalances`).
  */
 export async function fetchBankAccounts(): Promise<BankAccount[]> {
@@ -22,6 +22,22 @@ export async function fetchBankAccounts(): Promise<BankAccount[]> {
     .order("name", { ascending: true });
 
   return (data as BankAccount[]) ?? [];
+}
+
+/**
+ * Conta quantos registros o usuário tem em `bank_accounts`.
+ * Usado como guarda rápida (FAB): evita falsas aberturas quando ainda não há
+ * nenhuma conta cadastrada. Os gerenciadores usam a lista completa que já
+ * carregam (`accounts.length === 0`) e revalidam antes de abrir.
+ */
+export async function hasBankAccounts(): Promise<boolean> {
+  const supabase = createClient();
+  const { count, error } = await supabase
+    .from("bank_accounts")
+    .select("id", { count: "exact", head: true });
+
+  if (error) return false;
+  return (count ?? 0) > 0;
 }
 
 /** Rótulo da conta no seletor: sinaliza as carteiras de dinheiro físico. */
@@ -67,9 +83,9 @@ function roundCurrency(value: number): number {
 }
 
 /**
- * Valor considerado para um recebível recebido: `amount_paid` quando houver
+ * Valor considerado para uma entrada recebida: `amount_paid` quando houver
  * recebimento (parcial ou total), senão `amount_due` — mesma convenção dos
- * cartões do Painel e do fluxo de caixa.
+ * cartões da Visão geral e do fluxo de caixa.
  */
 function receivedAmount(receivable: MovementRow): number {
   const paid = Number(receivable.amount_paid ?? 0);
@@ -79,9 +95,9 @@ function receivedAmount(receivable: MovementRow): number {
 /**
  * Recalcula o saldo real (`bank_accounts.balance`) das contas informadas:
  *
- *   balance = initial_balance + recebíveis recebidos − despesas pagas
+ *   balance = initial_balance + entradas recebidas − despesas pagas
  *
- * - Despesas com status `paga` subtraem `amount`; recebíveis com status
+ * - Despesas com status `paga` subtraem `amount`; entradas com status
  *   `recebido` somam `amount_paid` (ou `amount_due` quando não houver
  *   `amount_paid`).
  * - O recálculo ignora o mês de referência: o saldo da conta é acumulado.
@@ -172,7 +188,7 @@ export async function recalculateBankAccountBalances(
 
 /**
  * Recalcula o saldo real de todas as contas do usuário logado — usado ao
- * abrir a tela de Bancos e o Painel para exibir sempre o saldo calculado.
+ * abrir a tela de Bancos e a Visão geral para exibir sempre o saldo calculado.
  */
 export async function recalculateAllBankAccountBalances(): Promise<void> {
   await recalculateBankAccountBalances();

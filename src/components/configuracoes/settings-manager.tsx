@@ -237,7 +237,7 @@ export function SettingsManager() {
 
         <CategoryCard
           type="receivable"
-          title="Fontes de renda (recebíveis)"
+          title="Fontes de renda (entradas)"
           description="Origens de quem a família recebe valores. As categorias padrão já vêm prontas e novas podem ser adicionadas."
           placeholder="Ex.: Salário"
           defaults={RECEIVABLE_CATEGORIES}

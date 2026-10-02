@@ -4,14 +4,16 @@ import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Plus, TrendingDown, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { hasBankAccounts } from "@/lib/bank-accounts";
 import {
   requestQuickAddExpense,
   requestQuickAddReceivable,
 } from "@/lib/quick-add-events";
+import { NoAccountModal } from "@/components/ui/no-account-modal";
 
 /**
  * Botão flutuante de ação rápida (FAB / Speed Dial) visível em todas as
- * páginas do Dashboard. Abre o modal de Nova Despesa ou Novo Recebível:
+ * páginas do Dashboard. Abre o modal de Nova Despesa ou Nova Entrada:
  * - se já estiver na página correspondente, dispara um evento global que o
  *   gerenciador montado escuta e abre o seu modal local;
  * - caso contrário, navega para a página com `?nova=1`, e o gerenciador
@@ -19,6 +21,7 @@ import {
  */
 export function QuickAddFab() {
   const [open, setOpen] = useState(false);
+  const [noAccountOpen, setNoAccountOpen] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
 
@@ -34,24 +37,36 @@ export function QuickAddFab() {
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [open ]);
+  }, [open]);
+
+  /**
+   * Guarda do FAB: verifica contas no Supabase antes de abrir/navegar.
+   * - Na página de destino, delega ao gerenciador (evento → `guardedOpenCreate`
+   *   com revalidação), evitando modal duplicado.
+   * - Fora da página de destino, checa aqui e exibe o bloqueio local sem navegar.
+   */
+  async function guardedNavigate(
+    targetPath: "/dashboard/despesas" | "/dashboard/recebiveis",
+    request: () => void,
+  ) {
+    setOpen(false);
+    if (pathname === targetPath) {
+      request();
+      return;
+    }
+    if (await hasBankAccounts()) {
+      router.push(`${targetPath}?nova=1`);
+      return;
+    }
+    setNoAccountOpen(true);
+  }
 
   function handleNewExpense() {
-    setOpen(false);
-    if (pathname === "/dashboard/despesas") {
-      requestQuickAddExpense();
-    } else {
-      router.push("/dashboard/despesas?nova=1");
-    }
+    void guardedNavigate("/dashboard/despesas", requestQuickAddExpense);
   }
 
   function handleNewReceivable() {
-    setOpen(false);
-    if (pathname === "/dashboard/recebiveis") {
-      requestQuickAddReceivable();
-    } else {
-      router.push("/dashboard/recebiveis?nova=1");
-    }
+    void guardedNavigate("/dashboard/recebiveis", requestQuickAddReceivable);
   }
 
   return (
@@ -84,7 +99,7 @@ export function QuickAddFab() {
             className="group flex items-center gap-3"
           >
             <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-md transition-colors group-hover:border-emerald-200 group-hover:text-emerald-700">
-              Novo Recebível
+              Nova Entrada
             </span>
             <span className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-600 text-white shadow-lg transition-transform duration-200 group-hover:scale-105 group-active:scale-95">
               <TrendingUp className="h-5 w-5" />
@@ -111,7 +126,7 @@ export function QuickAddFab() {
           type="button"
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
-          aria-label={open ? "Fechar ações rápidas" : "Adicionar despesa ou recebível"}
+          aria-label={open ? "Fechar ações rápidas" : "Adicionar despesa ou entrada"}
           className="flex h-14 w-14 items-center justify-center rounded-full bg-teal-700 text-white shadow-lg transition-all duration-200 hover:bg-teal-800 hover:shadow-xl hover:scale-105 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2"
         >
           <Plus
@@ -122,6 +137,13 @@ export function QuickAddFab() {
           />
         </button>
       </div>
+
+      {/* Bloqueio local do FAB (fora das páginas de destino): mesmo modal
+          reutilizado pelos gerenciadores, sem navegar para outra página. */}
+      <NoAccountModal
+        open={noAccountOpen}
+        onClose={() => setNoAccountOpen(false)}
+      />
     </>
   );
 }

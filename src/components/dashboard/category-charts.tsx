@@ -276,9 +276,9 @@ export function CategoryCharts() {
         emptyMessage="Sem despesas registradas neste período."
       />
       <CategoryPieCard
-        title="Recebíveis por Categoria"
+        title="Entradas por Categoria"
         data={data.receivables}
-        emptyMessage="Sem recebíveis registrados neste período."
+        emptyMessage="Sem entradas registradas neste período."
       />
     </div>
   );

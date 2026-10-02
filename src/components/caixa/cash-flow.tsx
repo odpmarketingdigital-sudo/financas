@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useMonth } from "@/contexts/month-context";
 import { createClient } from "@/lib/supabase/client";
+import { recalculateAllBankAccountBalances } from "@/lib/bank-accounts";
 import {
   cn,
   formatCurrency,
@@ -31,6 +32,8 @@ interface CashFlowDay {
 interface CashFlowData {
   days: CashFlowDay[];
   openingBalance: number;
+  /** Soma atual de todas as contas/carteiras (`bank_accounts.balance`). */
+  currentTotalBalance: number;
   totalEntries: number;
   totalExits: number;
 }
@@ -38,18 +41,19 @@ interface CashFlowData {
 const emptyData: CashFlowData = {
   days: [],
   openingBalance: 0,
+  currentTotalBalance: 0,
   totalEntries: 0,
   totalExits: 0,
 };
 
-/** Linha de despesa paga usada no Livro Caixa (`status = 'paga'`). */
+/** Linha de despesa paga usada no Fluxo de caixa (`status = 'paga'`). */
 interface PaidExpenseRow {
   amount: number | string;
   due_date: string;
   payment_date: string | null;
 }
 
-/** Linha de recebível recebido usada no Livro Caixa (`status = 'recebido'`). */
+/** Linha de entrada recebida usada no Fluxo de caixa (`status = 'recebido'`). */
 interface ReceivedReceivableRow {
   amount_due: number | string;
   amount_paid: number | string;
@@ -81,16 +85,16 @@ function toAmount(value: number | string | null | undefined): number {
 /**
  * Data em que a movimentação afeta o caixa: a data de pagamento/recebimento
  * (`payment_date`) e, na ausência dela, a data de vencimento (`due_date`) —
- * usada para posicionar cada lançamento no dia correto do Livro Caixa.
+ * usada para posicionar cada lançamento no dia correto do Fluxo de caixa.
  */
 function cashDate(row: { due_date: string; payment_date: string | null }): string {
   return row.payment_date || row.due_date;
 }
 
 /**
- * Valor considerado para cada recebível: o valor efetivamente recebido
+ * Valor considerado para cada entrada: o valor efetivamente recebido
  * (`amount_paid`) quando houver, senão o previsto (`amount_due`) — mesma
- * convenção usada nos cartões de resumo do Painel.
+ * convenção usada nos cartões de resumo da Visão geral.
  */
 function receivableAmount(receivable: {
   amount_due: number | string;
@@ -111,11 +115,11 @@ function balanceTone(value: number): string {
  * Saldo inicial do mês selecionado:
  *
  *   Σ initial_balance (contas e carteiras)
- *   + recebíveis recebidos com data anterior ao dia 1 do mês
+ *   + entradas recebidas com data anterior ao dia 1 do mês
  *   − despesas pagas com data anterior ao dia 1 do mês
  *
  * Considera apenas o que já foi efetivado no caixa (despesas pagas e
- * recebíveis recebidos), posicionado pela data de pagamento/recebimento — ou
+ * entradas recebidas), posicionado pela data de pagamento/recebimento — ou
  * pelo vencimento quando `payment_date` não estiver preenchido.
  */
 function computeOpeningBalance(
@@ -153,7 +157,7 @@ function computeOpeningBalance(
  * Gera todos os dias do mês com entradas, saídas e saldos acumulados.
  *
  * Entram apenas os lançamentos efetivados no caixa — despesas pagas e
- * recebíveis recebidos — agrupados pela data de pagamento/recebimento. O saldo
+ * entradas recebidas — agrupados pela data de pagamento/recebimento. O saldo
  * é calculado sequencialmente: no dia 1 é `saldoInicial + entradas − saídas` e,
  * nos dias seguintes, o saldo acumulado anterior incorpora o resultado do dia.
  * No último dia o acumulado equivale a `saldoInicial + totalEntradas −
@@ -162,6 +166,7 @@ function computeOpeningBalance(
 function buildCashFlow(
   referenceMonth: string,
   openingBalance: number,
+  currentTotalBalance: number,
   expenses: readonly PaidExpenseRow[],
   receivables: readonly ReceivedReceivableRow[],
 ): CashFlowData {
@@ -208,7 +213,7 @@ function buildCashFlow(
     days.push({ date, entries, exits, accumulated });
   }
 
-  return { days, openingBalance, totalEntries, totalExits };
+  return { days, openingBalance, currentTotalBalance, totalEntries, totalExits };
 }
 
 export function CashFlow() {
@@ -222,8 +227,12 @@ export function CashFlow() {
     async function load() {
       const supabase = createClient();
 
-      // Apenas o que foi efetivado no caixa: despesas pagas e recebíveis
-      // recebidos. Não filtramos por `reference_month` porque o Livro Caixa se
+      // Recalcula primeiro para que os saldos lidos a seguir já reflitam o
+      // saldo real (inicial + recebidos − pagos), como na Visão geral.
+      await recalculateAllBankAccountBalances();
+
+      // Apenas o que foi efetivado no caixa: despesas pagas e entradas
+      // recebidas. Não filtramos por `reference_month` porque o Fluxo de caixa se
       // posiciona pela data de pagamento/recebimento — que pode ser diferente
       // do mês de referência — e o saldo inicial depende dos meses anteriores.
       const [expensesRes, receivablesRes, accountsRes] = await Promise.all([
@@ -244,16 +253,28 @@ export function CashFlow() {
       const expenses = (expensesRes.data ?? []) as PaidExpenseRow[];
       const receivables = (receivablesRes.data ??
         []) as ReceivedReceivableRow[];
+      const accounts = (accountsRes.data ?? []) as OpeningAccountRow[];
 
       const openingBalance = computeOpeningBalance(
         referenceMonth,
-        (accountsRes.data ?? []) as OpeningAccountRow[],
+        accounts,
         expenses,
         receivables,
       );
 
+      // Saldo atual total: soma dos saldos reais de todas as contas/carteiras.
+      const currentTotalBalance = roundCurrency(
+        accounts.reduce((sum, account) => sum + toAmount(account.balance), 0),
+      );
+
       setData(
-        buildCashFlow(referenceMonth, openingBalance, expenses, receivables),
+        buildCashFlow(
+          referenceMonth,
+          openingBalance,
+          currentTotalBalance,
+          expenses,
+          receivables,
+        ),
       );
       setLoading(false);
     }
@@ -286,12 +307,12 @@ export function CashFlow() {
         <Card>
           <div className="flex items-start justify-between gap-3">
             <div>
-              <CardTitle>Saldo inicial</CardTitle>
+              <CardTitle>Saldo Atual Total</CardTitle>
               <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">
-                {formatCurrency(data.openingBalance)}
+                {formatCurrency(data.currentTotalBalance)}
               </p>
               <p className="mt-1 text-xs text-slate-400">
-                Contas + recebidos − pagos até o mês
+                Soma atual de contas e carteiras
               </p>
             </div>
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700">
@@ -308,7 +329,7 @@ export function CashFlow() {
                 {formatCurrency(data.totalEntries)}
               </p>
               <p className="mt-1 text-xs text-slate-400">
-                Recebíveis recebidos
+                Entradas recebidas
               </p>
             </div>
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
@@ -338,7 +359,7 @@ export function CashFlow() {
         <p className="border-b border-slate-100 px-4 py-3 text-xs text-slate-400 md:px-5">
           Todos os {data.days.length} dias de {monthLabel} · entradas e saídas
           agrupadas pela data de pagamento de cada lançamento (despesas pagas e
-          recebíveis recebidos).
+          entradas recebidas).
         </p>
 
         {/* Mobile: cards diários */}

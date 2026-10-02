@@ -502,7 +502,7 @@ export function BanksManager() {
                 </span>
               </>
             ) : (
-              "O saldo atual passa a ser recalculado conforme despesas e recebíveis."
+              "O saldo atual passa a ser recalculado conforme despesas e entradas."
             )}
           </p>
 

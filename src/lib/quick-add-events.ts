@@ -1,7 +1,7 @@
 /**
  * Eventos globais do botão flutuante de ação rápida (QuickAddFab).
  *
- * Os formulários de despesa/recebível continuam a viver nos seus
+ * Os formulários de despesa/entrada continuam a viver nos seus
  * gerenciadores (`ExpensesManager` / `ReceivablesManager`) — o FAB apenas
  * sinaliza a intenção de criar um novo registo. Quando o utilizador já está
  * na página correspondente, o gerenciador montado escuta o evento e abre o

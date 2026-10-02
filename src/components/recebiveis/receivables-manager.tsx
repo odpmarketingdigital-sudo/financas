@@ -12,6 +12,7 @@ import { RECEIVABLE_CATEGORIES } from "@/constants/categories";
 import {
   fetchBankAccounts,
   findBankAccountName,
+  hasBankAccounts,
   recalculateBankAccountBalances,
   toBankAccountOptions,
 } from "@/lib/bank-accounts";
@@ -23,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
+import { NoAccountModal } from "@/components/ui/no-account-modal";
 import { Card } from "@/components/ui/card";
 import { Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 
@@ -77,6 +79,7 @@ export function ReceivablesManager() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
+  const [noAccountOpen, setNoAccountOpen] = useState(false);
   const [editing, setEditing] = useState<Receivable | null>(null);
   const [form, setForm] = useState<ReceivableFormState>(emptyForm);
   const [error, setError] = useState<string | null>(null);
@@ -109,6 +112,11 @@ export function ReceivablesManager() {
   }
 
   function openCreate() {
+    // Bloqueio: sem conta/carteira cadastrada exibe o alerta em vez do form.
+    if (accounts.length === 0) {
+      setNoAccountOpen(true);
+      return;
+    }
     setEditing(null);
     setForm({
       ...emptyForm,
@@ -118,17 +126,58 @@ export function ReceivablesManager() {
     setModalOpen(true);
   }
 
+  /**
+   * Entrada protegida: revalida a lista de contas no Supabase antes de decidir
+   * (cobre o caso de o usuário ter acabado de cadastrar o primeiro banco e
+   * voltar para esta tela sem recarregar — o bloqueio sai imediatamente).
+   */
+  async function guardedOpenCreate() {
+    if (accounts.length > 0) {
+      openCreate();
+      return;
+    }
+    const ok = await hasBankAccounts();
+    if (ok) {
+      const next = await fetchBankAccounts();
+      setAccounts(next);
+      if (next.length === 0) {
+        setNoAccountOpen(true);
+        return;
+      }
+      setEditing(null);
+      setForm({
+        ...emptyForm,
+        date: referenceMonth.slice(0, 8) + "15",
+      });
+      setError(null);
+      setModalOpen(true);
+      return;
+    }
+    setNoAccountOpen(true);
+  }
+
   // FAB global: abre o modal via evento (mesma página) ou `?nova=1` (navegação).
   useEffect(() => {
-    const handler = () => openCreate();
+    const handler = () => void guardedOpenCreate();
     window.addEventListener(QUICK_ADD_RECEIVABLE_EVENT, handler);
     return () => window.removeEventListener(QUICK_ADD_RECEIVABLE_EVENT, handler);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [referenceMonth]);
+  }, [referenceMonth, accounts]);
 
   useEffect(() => {
-    if (consumeQuickAddQueryParam()) openCreate();
+    if (consumeQuickAddQueryParam()) void guardedOpenCreate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Ao voltar de `/dashboard/bancos` (foco na aba), recarrega as contas para
+  // liberar o botão "Nova entrada" assim que o primeiro banco for criado.
+  useEffect(() => {
+    const onFocus = async () => {
+      const next = await fetchBankAccounts();
+      setAccounts((prev) => (prev.length === next.length ? prev : next));
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
   }, []);
 
   function openEdit(item: Receivable) {
@@ -222,10 +271,10 @@ export function ReceivablesManager() {
   }
 
   async function handleDelete(item: Receivable) {
-    if (!confirm("Excluir este recebível?")) return;
+    if (!confirm("Excluir esta entrada?")) return;
     const supabase = createClient();
     await supabase.from("receivables").delete().eq("id", item.id);
-    // Desfaz a entrada do saldo da conta vinculada ao recebível excluído.
+    // Desfaz a entrada do saldo da conta vinculada à entrada excluída.
     await recalculateBankAccountBalances([item.bank_account_id]);
     refresh();
   }
@@ -233,9 +282,9 @@ export function ReceivablesManager() {
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <Button onClick={openCreate}>
+        <Button onClick={() => void guardedOpenCreate()}>
           <Plus className="h-4 w-4" />
-          Novo recebível
+          Nova entrada
         </Button>
       </div>
 
@@ -246,7 +295,7 @@ export function ReceivablesManager() {
           </div>
         ) : receivables.length === 0 ? (
           <p className="px-5 py-12 text-center text-sm text-slate-500">
-            Nenhum recebível neste mês.
+            Nenhuma entrada neste mês.
           </p>
         ) : (
           <>
@@ -406,7 +455,7 @@ export function ReceivablesManager() {
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title={editing ? "Editar recebível" : "Novo recebível"}
+        title={editing ? "Editar entrada" : "Nova entrada"}
       >
         <form onSubmit={handleSave} className="flex flex-col gap-4">
           <Select
@@ -445,7 +494,7 @@ export function ReceivablesManager() {
               >
                 Cadastre uma conta ou carteira
               </Link>{" "}
-              para vincular o recebível.
+              para vincular a entrada.
             </p>
           )}
           <Input
@@ -512,6 +561,7 @@ export function ReceivablesManager() {
           </div>
         </form>
       </Modal>
+      <NoAccountModal open={noAccountOpen} onClose={() => setNoAccountOpen(false)} />
     </div>
   );
 }

@@ -12,6 +12,7 @@ import { EXPENSE_CATEGORIES } from "@/constants/categories";
 import {
   fetchBankAccounts,
   findBankAccountName,
+  hasBankAccounts,
   recalculateBankAccountBalances,
   toBankAccountOptions,
 } from "@/lib/bank-accounts";
@@ -23,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
+import { NoAccountModal } from "@/components/ui/no-account-modal";
 import { Card } from "@/components/ui/card";
 import { Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 
@@ -79,6 +81,7 @@ export function ExpensesManager() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
+  const [noAccountOpen, setNoAccountOpen] = useState(false);
   const [editing, setEditing] = useState<Expense | null>(null);
   const [form, setForm] = useState<ExpenseFormState>(emptyForm);
   const [error, setError] = useState<string | null>(null);
@@ -107,6 +110,11 @@ export function ExpensesManager() {
   }
 
   function openCreate() {
+    // Bloqueio: sem conta/carteira cadastrada exibe o alerta em vez do form.
+    if (accounts.length === 0) {
+      setNoAccountOpen(true);
+      return;
+    }
     setEditing(null);
     setForm({
       ...emptyForm,
@@ -116,17 +124,58 @@ export function ExpensesManager() {
     setModalOpen(true);
   }
 
+  /**
+   * Entrada protegida: revalida a lista de contas no Supabase antes de decidir
+   * (cobre o caso de o usuário ter acabado de cadastrar o primeiro banco e
+   * voltar para esta tela sem recarregar — o bloqueio sai imediatamente).
+   */
+  async function guardedOpenCreate() {
+    if (accounts.length > 0) {
+      openCreate();
+      return;
+    }
+    const ok = await hasBankAccounts();
+    if (ok) {
+      const next = await fetchBankAccounts();
+      setAccounts(next);
+      if (next.length === 0) {
+        setNoAccountOpen(true);
+        return;
+      }
+      setEditing(null);
+      setForm({
+        ...emptyForm,
+        due_date: referenceMonth.slice(0, 8) + "15",
+      });
+      setError(null);
+      setModalOpen(true);
+      return;
+    }
+    setNoAccountOpen(true);
+  }
+
   // FAB global: abre o modal via evento (mesma página) ou `?nova=1` (navegação).
   useEffect(() => {
-    const handler = () => openCreate();
+    const handler = () => void guardedOpenCreate();
     window.addEventListener(QUICK_ADD_EXPENSE_EVENT, handler);
     return () => window.removeEventListener(QUICK_ADD_EXPENSE_EVENT, handler);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [referenceMonth]);
+  }, [referenceMonth, accounts]);
 
   useEffect(() => {
-    if (consumeQuickAddQueryParam()) openCreate();
+    if (consumeQuickAddQueryParam()) void guardedOpenCreate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Ao voltar de `/dashboard/bancos` (foco na aba), recarrega as contas para
+  // liberar o botão "Nova despesa" assim que o primeiro banco for criado.
+  useEffect(() => {
+    const onFocus = async () => {
+      const next = await fetchBankAccounts();
+      setAccounts((prev) => (prev.length === next.length ? prev : next));
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
   }, []);
 
   function openEdit(expense: Expense) {
@@ -219,7 +268,7 @@ export function ExpensesManager() {
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <Button onClick={openCreate}>
+        <Button onClick={() => void guardedOpenCreate()}>
           <Plus className="h-4 w-4" />
           Nova despesa
         </Button>
@@ -512,6 +561,7 @@ export function ExpensesManager() {
           </div>
         </form>
       </Modal>
+      <NoAccountModal open={noAccountOpen} onClose={() => setNoAccountOpen(false)} />
     </div>
   );
 }

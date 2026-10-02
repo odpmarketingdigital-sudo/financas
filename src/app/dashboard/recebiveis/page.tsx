@@ -5,7 +5,7 @@ export default function RecebiveisPage() {
   return (
     <>
       <DashboardHeader
-        title="Recebíveis"
+        title="Entradas"
         description="Valores a receber associados a cada fonte de renda."
       />
       <ReceivablesManager />

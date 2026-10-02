@@ -133,14 +133,14 @@ export function SummaryCards() {
     {
       title: "Total A Receber",
       value: summary.totalAReceber,
-      hint: "Recebíveis em aberto",
+      hint: "Entradas em aberto",
       icon: ArrowDownCircle,
       accent: "text-sky-600 bg-sky-50",
     },
     {
       title: "Total Recebido",
       value: summary.totalRecebido,
-      hint: "Recebíveis quitados",
+      hint: "Entradas recebidas",
       icon: ArrowUpCircle,
       accent: "text-emerald-600 bg-emerald-50",
     },

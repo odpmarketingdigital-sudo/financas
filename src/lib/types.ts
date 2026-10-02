@@ -62,7 +62,7 @@ export interface BankAccount {
    */
   initial_balance?: number | null;
   /**
-   * Saldo real calculado: `initial_balance` + recebíveis recebidos −
+   * Saldo real calculado: `initial_balance` + entradas recebidas −
    * despesas pagas vinculadas à conta. Atualizado a cada movimentação.
    */
   balance: number;
@@ -76,7 +76,7 @@ export interface DashboardSummary {
   saldoTotalAtual: number;
   /** Soma apenas das contas marcadas como dinheiro físico (`is_cash`). */
   dinheiroEmMao: number;
-  /** saldoTotalAtual + recebíveis pendentes do mês − despesas pendentes do mês. */
+  /** saldoTotalAtual + entradas pendentes do mês − despesas pendentes do mês. */
   saldoPrevisto: number;
   totalAPagar: number;
   totalPago: number;

@@ -21,11 +21,11 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 
 const navItems = [
-  { href: "/dashboard", label: "Painel", icon: LayoutDashboard },
+  { href: "/dashboard", label: "Visão geral", icon: LayoutDashboard },
   { href: "/dashboard/despesas", label: "Despesas", icon: Receipt },
-  { href: "/dashboard/recebiveis", label: "Recebíveis", icon: Wallet },
+  { href: "/dashboard/recebiveis", label: "Entradas", icon: Wallet },
+  { href: "/caixa", label: "Fluxo de caixa", icon: Calculator },
   { href: "/dashboard/bancos", label: "Bancos / Carteiras", icon: Landmark },
-  { href: "/caixa", label: "Caixa", icon: Calculator },
   { href: "/dashboard/configuracoes", label: "Configurações", icon: Settings },
   { href: "/dashboard/perfil", label: "Perfil", icon: UserRound },
 ];
