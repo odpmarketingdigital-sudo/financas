@@ -11,7 +11,9 @@ import {
   LogOut,
   Menu,
   X,
+  Heart,
   HeartHandshake,
+  CirclePlay,
   UserRound,
 } from "lucide-react";
 import Link from "next/link";
@@ -19,6 +21,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
+import { ColaboreModal } from "@/components/colabore-modal";
+import { ComoUsarModal } from "@/components/como-usar-modal";
 
 const navItems = [
   { href: "/dashboard", label: "Visão geral", icon: LayoutDashboard },
@@ -34,12 +38,26 @@ export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [howToOpen, setHowToOpen] = useState(false);
+  const [colaboreOpen, setColaboreOpen] = useState(false);
 
   async function handleLogout() {
     const supabase = createClient();
     await supabase.auth.signOut();
     router.push("/login");
     router.refresh();
+  }
+
+  /** Abre o modal "Como Usar" (fechando o menu móvel, se estiver aberto). */
+  function handleOpenHowTo() {
+    setOpen(false);
+    setHowToOpen(true);
+  }
+
+  /** Abre o modal "Colabore" (fechando o menu móvel, se estiver aberto). */
+  function handleOpenColabore() {
+    setOpen(false);
+    setColaboreOpen(true);
   }
 
   function isActive(href: string) {
@@ -65,6 +83,26 @@ export function Sidebar() {
           {label}
         </Link>
       ))}
+
+      <div className="my-2 border-t border-slate-100" />
+
+      <button
+        type="button"
+        onClick={handleOpenHowTo}
+        className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900"
+      >
+        <CirclePlay className="h-4 w-4 shrink-0" />
+        Como Usar
+      </button>
+
+      <button
+        type="button"
+        onClick={handleOpenColabore}
+        className="flex items-center gap-3 rounded-xl border border-teal-200 bg-teal-50 px-3 py-2.5 text-left text-sm font-semibold text-teal-700 transition-colors hover:bg-teal-100 hover:text-teal-800"
+      >
+        <Heart className="h-4 w-4 shrink-0" />
+        Colabore
+      </button>
     </nav>
   );
 
@@ -112,8 +150,8 @@ export function Sidebar() {
             <HeartHandshake className="h-5 w-5" />
           </div>
           <div>
-            <p className="text-sm font-semibold text-slate-900">Finanças pessoais</p>
-            <p className="text-xs text-slate-500">Controle financeiro</p>
+            <p className="text-sm font-semibold text-slate-900">Toustão em dia</p>
+            <p className="text-xs text-slate-500">Finanças pessoais</p>
           </div>
         </div>
 
@@ -135,6 +173,9 @@ export function Sidebar() {
           </button>
         </div>
       </aside>
+
+      <ComoUsarModal open={howToOpen} onClose={() => setHowToOpen(false)} />
+      <ColaboreModal open={colaboreOpen} onClose={() => setColaboreOpen(false)} />
     </>
   );
 }

@@ -194,3 +194,33 @@ export async function recalculateAllBankAccountBalances(): Promise<void> {
   await recalculateBankAccountBalances();
 }
 
+/**
+ * Associa despesas e entradas antigas **sem conta** (`bank_account_id` nulo) à
+ * primeira conta/carteira do usuário, na mesma ordem de `fetchBankAccounts`
+ * (carteiras de dinheiro por último, demais em ordem alfabética).
+ *
+ * Serve para não quebrar os recálculos: `recalculateBankAccountBalances` ignora
+ * lançamentos sem `bank_account_id`, então registros legados ficariam fora do
+ * saldo real. É idempotente — só toca em registros ainda sem vínculo — e, sem
+ * nenhuma conta cadastrada, não altera nada.
+ *
+ * Chamada ao abrir a Visão geral (Painel) e o Fluxo de caixa.
+ */
+export async function assignOrphanMovementsToFirstAccount(): Promise<void> {
+  const accounts = await fetchBankAccounts();
+  const target = accounts[0];
+  if (!target) return;
+
+  const supabase = createClient();
+  await Promise.all([
+    supabase
+      .from("expenses")
+      .update({ bank_account_id: target.id })
+      .is("bank_account_id", null),
+    supabase
+      .from("receivables")
+      .update({ bank_account_id: target.id })
+      .is("bank_account_id", null),
+  ]);
+}
+

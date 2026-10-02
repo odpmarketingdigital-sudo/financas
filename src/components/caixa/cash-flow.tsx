@@ -3,7 +3,10 @@
 import { useEffect, useState } from "react";
 import { useMonth } from "@/contexts/month-context";
 import { createClient } from "@/lib/supabase/client";
-import { recalculateAllBankAccountBalances } from "@/lib/bank-accounts";
+import {
+  assignOrphanMovementsToFirstAccount,
+  recalculateAllBankAccountBalances,
+} from "@/lib/bank-accounts";
 import {
   cn,
   formatCurrency,
@@ -226,6 +229,10 @@ export function CashFlow() {
 
     async function load() {
       const supabase = createClient();
+
+      // Conserta lançamentos antigos sem conta antes de recalcular (mesma
+      // rotina da Visão geral), para não deixá-los fora do saldo real.
+      await assignOrphanMovementsToFirstAccount();
 
       // Recalcula primeiro para que os saldos lidos a seguir já reflitam o
       // saldo real (inicial + recebidos − pagos), como na Visão geral.

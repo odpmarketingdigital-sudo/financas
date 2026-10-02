@@ -3,7 +3,10 @@
 import { useEffect, useState } from "react";
 import { useMonth } from "@/contexts/month-context";
 import { createClient } from "@/lib/supabase/client";
-import { recalculateAllBankAccountBalances } from "@/lib/bank-accounts";
+import {
+  assignOrphanMovementsToFirstAccount,
+  recalculateAllBankAccountBalances,
+} from "@/lib/bank-accounts";
 import type { DashboardSummary } from "@/lib/types";
 import { cn, formatCurrency } from "@/lib/utils";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -42,6 +45,10 @@ export function SummaryCards() {
 
     async function load() {
       const supabase = createClient();
+
+      // Conserta lançamentos antigos sem conta antes de recalcular: sem
+      // `bank_account_id` eles ficariam fora do saldo real.
+      await assignOrphanMovementsToFirstAccount();
 
       // Garante que os cartões de saldo reflitam o saldo real calculado de
       // cada conta (inicial + recebidos − pagos) antes de somá-los.

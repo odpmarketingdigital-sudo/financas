@@ -31,10 +31,10 @@ export async function updateSession(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname;
   const isAuthPage = pathname === "/login" || pathname === "/register";
+  // A Landing Page ("/") é pública: usuários autenticados também podem vê-la,
+  // com o botão do header trocando para "Ir para meu Painel".
   const isProtected =
-    pathname.startsWith("/dashboard") ||
-    pathname.startsWith("/caixa") ||
-    pathname === "/";
+    pathname.startsWith("/dashboard") || pathname.startsWith("/caixa");
 
   if (!user && isProtected && !isAuthPage) {
     const url = request.nextUrl.clone();
@@ -43,12 +43,6 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (user && isAuthPage) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/dashboard";
-    return NextResponse.redirect(url);
-  }
-
-  if (user && pathname === "/") {
     const url = request.nextUrl.clone();
     url.pathname = "/dashboard";
     return NextResponse.redirect(url);

@@ -83,6 +83,7 @@ export function ReceivablesManager() {
   const [editing, setEditing] = useState<Receivable | null>(null);
   const [form, setForm] = useState<ReceivableFormState>(emptyForm);
   const [error, setError] = useState<string | null>(null);
+  const [accountError, setAccountError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
@@ -123,6 +124,7 @@ export function ReceivablesManager() {
       date: referenceMonth.slice(0, 8) + "15",
     });
     setError(null);
+    setAccountError(null);
     setModalOpen(true);
   }
 
@@ -150,6 +152,7 @@ export function ReceivablesManager() {
         date: referenceMonth.slice(0, 8) + "15",
       });
       setError(null);
+      setAccountError(null);
       setModalOpen(true);
       return;
     }
@@ -194,12 +197,14 @@ export function ReceivablesManager() {
       bank_account_id: item.bank_account_id ?? "",
     });
     setError(null);
+    setAccountError(null);
     setModalOpen(true);
   }
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setAccountError(null);
 
     if (!form.category) {
       setError("Selecione uma categoria / fonte de renda.");
@@ -212,7 +217,9 @@ export function ReceivablesManager() {
     }
 
     if (!form.bank_account_id) {
-      setError("Selecione a conta bancária / dinheiro.");
+      setAccountError(
+        "Selecione a conta ou carteira onde o dinheiro entrará.",
+      );
       return;
     }
 
@@ -475,14 +482,16 @@ export function ReceivablesManager() {
             id="bank_account_id"
             label="Conta bancária / Dinheiro"
             required
+            error={accountError ?? undefined}
             placeholder={
               accounts.length === 0 ? "Nenhuma conta cadastrada" : "Selecione"
             }
             disabled={accounts.length === 0}
             value={form.bank_account_id}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, bank_account_id: e.target.value }))
-            }
+            onChange={(e) => {
+              setForm((f) => ({ ...f, bank_account_id: e.target.value }));
+              if (e.target.value) setAccountError(null);
+            }}
             options={toBankAccountOptions(accounts)}
           />
           {accounts.length === 0 && (

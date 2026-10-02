@@ -85,6 +85,7 @@ export function ExpensesManager() {
   const [editing, setEditing] = useState<Expense | null>(null);
   const [form, setForm] = useState<ExpenseFormState>(emptyForm);
   const [error, setError] = useState<string | null>(null);
+  const [accountError, setAccountError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
@@ -121,6 +122,7 @@ export function ExpensesManager() {
       due_date: referenceMonth.slice(0, 8) + "15",
     });
     setError(null);
+    setAccountError(null);
     setModalOpen(true);
   }
 
@@ -148,6 +150,7 @@ export function ExpensesManager() {
         due_date: referenceMonth.slice(0, 8) + "15",
       });
       setError(null);
+      setAccountError(null);
       setModalOpen(true);
       return;
     }
@@ -190,12 +193,14 @@ export function ExpensesManager() {
       bank_account_id: expense.bank_account_id ?? "",
     });
     setError(null);
+    setAccountError(null);
     setModalOpen(true);
   }
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setAccountError(null);
 
     if (form.status === "paga" && !form.payment_date) {
       setError("Data do pagamento é obrigatória quando o status é Paga.");
@@ -203,7 +208,9 @@ export function ExpensesManager() {
     }
 
     if (!form.bank_account_id) {
-      setError("Selecione a conta bancária / dinheiro.");
+      setAccountError(
+        "Selecione a conta ou carteira de onde o dinheiro sairá.",
+      );
       return;
     }
 
@@ -468,14 +475,16 @@ export function ExpensesManager() {
             id="bank_account_id"
             label="Conta bancária / Dinheiro"
             required
+            error={accountError ?? undefined}
             placeholder={
               accounts.length === 0 ? "Nenhuma conta cadastrada" : "Selecione"
             }
             disabled={accounts.length === 0}
             value={form.bank_account_id}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, bank_account_id: e.target.value }))
-            }
+            onChange={(e) => {
+              setForm((f) => ({ ...f, bank_account_id: e.target.value }));
+              if (e.target.value) setAccountError(null);
+            }}
             options={toBankAccountOptions(accounts)}
           />
           {accounts.length === 0 && (
