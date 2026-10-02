@@ -12,6 +12,7 @@ import {
   Menu,
   X,
   HeartHandshake,
+  UserRound,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -26,6 +27,7 @@ const navItems = [
   { href: "/dashboard/bancos", label: "Bancos / Carteiras", icon: Landmark },
   { href: "/caixa", label: "Caixa", icon: Calculator },
   { href: "/dashboard/configuracoes", label: "Configurações", icon: Settings },
+  { href: "/dashboard/perfil", label: "Perfil", icon: UserRound },
 ];
 
 export function Sidebar() {
@@ -68,20 +70,26 @@ export function Sidebar() {
 
   return (
     <>
-      <div className="fixed left-0 right-0 top-0 z-40 flex h-14 items-center justify-between border-b border-slate-200 bg-white/90 px-4 backdrop-blur lg:hidden">
-        <div className="flex items-center gap-2">
-          <HeartHandshake className="h-5 w-5 text-teal-700" />
-          <span className="font-semibold text-slate-900">Finanças Família</span>
-        </div>
+      <div className="fixed left-0 right-0 top-0 z-40 flex h-14 items-center justify-between bg-teal-700 px-4 shadow-md lg:hidden">
         <Button
           variant="ghost"
           size="sm"
-          className="h-9 w-9 p-0"
+          className="h-9 w-9 p-0 text-white hover:bg-teal-600 hover:text-white"
           onClick={() => setOpen((v) => !v)}
           aria-label={open ? "Fechar menu" : "Abrir menu"}
         >
           {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </Button>
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <HeartHandshake className="h-6 w-6 text-white" aria-label="Finanças Família" />
+        </div>
+        <Link
+          href="/dashboard/perfil"
+          aria-label="Ir para o perfil"
+          className="flex h-9 w-9 items-center justify-center rounded-lg text-white transition-colors hover:bg-teal-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+        >
+          <UserRound className="h-5 w-5" />
+        </Link>
       </div>
 
       {open && (
@@ -104,8 +112,8 @@ export function Sidebar() {
             <HeartHandshake className="h-5 w-5" />
           </div>
           <div>
-            <p className="text-sm font-semibold text-slate-900">Finanças Família</p>
-            <p className="text-xs text-slate-500">Gestão compartilhada</p>
+            <p className="text-sm font-semibold text-slate-900">Finanças pessoais</p>
+            <p className="text-xs text-slate-500">Controle financeiro</p>
           </div>
         </div>
 

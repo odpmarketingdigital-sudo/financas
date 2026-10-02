@@ -3,6 +3,10 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useMonth } from "@/contexts/month-context";
+import {
+  QUICK_ADD_EXPENSE_EVENT,
+  consumeQuickAddQueryParam,
+} from "@/lib/quick-add-events";
 import { createClient } from "@/lib/supabase/client";
 import { EXPENSE_CATEGORIES } from "@/constants/categories";
 import {
@@ -111,6 +115,19 @@ export function ExpensesManager() {
     setError(null);
     setModalOpen(true);
   }
+
+  // FAB global: abre o modal via evento (mesma página) ou `?nova=1` (navegação).
+  useEffect(() => {
+    const handler = () => openCreate();
+    window.addEventListener(QUICK_ADD_EXPENSE_EVENT, handler);
+    return () => window.removeEventListener(QUICK_ADD_EXPENSE_EVENT, handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [referenceMonth]);
+
+  useEffect(() => {
+    if (consumeQuickAddQueryParam()) openCreate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function openEdit(expense: Expense) {
     setEditing(expense);

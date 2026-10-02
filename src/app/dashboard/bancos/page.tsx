@@ -7,6 +7,7 @@ export default function BancosPage() {
       <DashboardHeader
         title="Bancos / Carteiras"
         description="Cadastre contas bancárias e carteiras de dinheiro físico com seus saldos."
+        showMonthFilter={false}
       />
       <BanksManager />
     </>

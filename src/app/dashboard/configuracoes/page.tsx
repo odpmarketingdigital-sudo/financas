@@ -7,6 +7,7 @@ export default function ConfiguracoesPage() {
       <DashboardHeader
         title="Configurações"
         description="Gerencie fontes de renda e categorias de despesas."
+        showMonthFilter={false}
       />
       <SettingsManager />
     </>
