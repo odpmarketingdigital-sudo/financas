@@ -321,3 +321,83 @@ alter table public.bank_accounts
 
 alter table public.bank_accounts
   alter column initial_balance set not null;
+
+-- =====================
+-- TRANSFERÊNCIAS ENTRE CONTAS
+-- Movimentação interna (origem → destino). O saldo real passa a considerar:
+--   balance = initial_balance + recebíveis recebidos − despesas pagas
+--           + transferências recebidas (to_account_id)
+--           − transferências enviadas (from_account_id)
+-- Transferências NÃO entram em "Total Recebido"/"Total Pago" (só expenses e
+-- receivables alimentam esses cards).
+-- =====================
+create table if not exists public.account_transfers (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  from_account_id uuid not null references public.bank_accounts(id) on delete cascade,
+  to_account_id uuid not null references public.bank_accounts(id) on delete cascade,
+  amount numeric(12, 2) not null check (amount > 0),
+  transfer_date date not null,
+  note text,
+  created_at timestamptz not null default now(),
+  check (from_account_id <> to_account_id)
+);
+
+create index if not exists account_transfers_user_idx
+  on public.account_transfers (user_id);
+
+create index if not exists account_transfers_from_idx
+  on public.account_transfers (from_account_id);
+
+create index if not exists account_transfers_to_idx
+  on public.account_transfers (to_account_id);
+
+alter table public.account_transfers enable row level security;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public'
+      and tablename = 'account_transfers'
+      and policyname = 'account_transfers_select_own'
+  ) then
+    create policy "account_transfers_select_own"
+      on public.account_transfers for select
+      using (auth.uid() = user_id);
+  end if;
+
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public'
+      and tablename = 'account_transfers'
+      and policyname = 'account_transfers_insert_own'
+  ) then
+    create policy "account_transfers_insert_own"
+      on public.account_transfers for insert
+      with check (auth.uid() = user_id);
+  end if;
+
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public'
+      and tablename = 'account_transfers'
+      and policyname = 'account_transfers_update_own'
+  ) then
+    create policy "account_transfers_update_own"
+      on public.account_transfers for update
+      using (auth.uid() = user_id)
+      with check (auth.uid() = user_id);
+  end if;
+
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public'
+      and tablename = 'account_transfers'
+      and policyname = 'account_transfers_delete_own'
+  ) then
+    create policy "account_transfers_delete_own"
+      on public.account_transfers for delete
+      using (auth.uid() = user_id);
+  end if;
+end $$;

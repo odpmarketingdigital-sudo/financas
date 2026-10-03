@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/client";
-import type { BankAccount } from "@/lib/types";
+import type { AccountTransfer, BankAccount } from "@/lib/types";
 
 /**
  * Contas bancárias e carteiras de dinheiro do usuário logado
@@ -77,6 +77,12 @@ type MovementRow = {
   amount_paid?: number | string | null;
 };
 
+/** Linha de transferência mínima usada no recálculo do saldo. */
+type TransferRow = {
+  from_account_id: string | null;
+  to_account_id: string | null;
+  amount?: number | string | null;
+};
 /** Arredonda para duas casas e evita ruído de ponto flutuante. */
 function roundCurrency(value: number): number {
   return Math.round(value * 100) / 100;
@@ -96,10 +102,13 @@ function receivedAmount(receivable: MovementRow): number {
  * Recalcula o saldo real (`bank_accounts.balance`) das contas informadas:
  *
  *   balance = initial_balance + entradas recebidas − despesas pagas
+ *           + transferências recebidas − transferências enviadas
  *
  * - Despesas com status `paga` subtraem `amount`; entradas com status
  *   `recebido` somam `amount_paid` (ou `amount_due` quando não houver
  *   `amount_paid`).
+ * - Transferências internas somam em `to_account_id` e subtraem em
+ *   `from_account_id` — e NÃO entram em "Total Recebido"/"Total Pago".
  * - O recálculo ignora o mês de referência: o saldo da conta é acumulado.
  * - É idempotente, portanto pode rodar a cada movimentação e também na
  *   abertura das telas para corrigir eventuais divergências (ex.: exclusão de
@@ -128,12 +137,19 @@ export async function recalculateBankAccountBalances(
     .from("receivables")
     .select("bank_account_id, amount_due, amount_paid")
     .eq("status", "recebido");
+  // Transferências internas: podem não existir em bases antigas (tabela criada
+  // depois). A ausência da tabela é tolerada — saldos seguem sem o ajuste.
+  const transfersQuery = supabase
+    .from("account_transfers")
+    .select("from_account_id, to_account_id, amount");
 
-  const [accountsRes, expensesRes, receivablesRes] = await Promise.all([
-    ids ? accountsQuery.in("id", ids) : accountsQuery,
-    ids ? expensesQuery.in("bank_account_id", ids) : expensesQuery,
-    ids ? receivablesQuery.in("bank_account_id", ids) : receivablesQuery,
-  ]);
+  const [accountsRes, expensesRes, receivablesRes, transfersRes] =
+    await Promise.all([
+      ids ? accountsQuery.in("id", ids) : accountsQuery,
+      ids ? expensesQuery.in("bank_account_id", ids) : expensesQuery,
+      ids ? receivablesQuery.in("bank_account_id", ids) : receivablesQuery,
+      transfersQuery,
+    ]);
 
   if (accountsRes.error || expensesRes.error || receivablesRes.error) return;
 
@@ -164,6 +180,27 @@ export async function recalculateBankAccountBalances(
     );
   }
 
+  const transferInByAccount = new Map<string, number>();
+  const transferOutByAccount = new Map<string, number>();
+  if (!transfersRes.error) {
+    for (const transfer of ((transfersRes.data ?? []) as TransferRow[])) {
+      const value = Number(transfer.amount ?? 0);
+      if (!Number.isFinite(value) || value === 0) continue;
+      if (transfer.to_account_id) {
+        transferInByAccount.set(
+          transfer.to_account_id,
+          (transferInByAccount.get(transfer.to_account_id) ?? 0) + value,
+        );
+      }
+      if (transfer.from_account_id) {
+        transferOutByAccount.set(
+          transfer.from_account_id,
+          (transferOutByAccount.get(transfer.from_account_id) ?? 0) + value,
+        );
+      }
+    }
+  }
+
   await Promise.all(
     accounts.map((account) => {
       // Contas legadas sem `initial_balance` mantêm o saldo gravado como base.
@@ -171,7 +208,9 @@ export async function recalculateBankAccountBalances(
       const next = roundCurrency(
         base +
           (receivedByAccount.get(account.id) ?? 0) -
-          (paidByAccount.get(account.id) ?? 0),
+          (paidByAccount.get(account.id) ?? 0) +
+          (transferInByAccount.get(account.id) ?? 0) -
+          (transferOutByAccount.get(account.id) ?? 0),
       );
 
       if (Math.abs(next - Number(account.balance)) < 0.005) {
@@ -222,5 +261,23 @@ export async function assignOrphanMovementsToFirstAccount(): Promise<void> {
       .update({ bank_account_id: target.id })
       .is("bank_account_id", null),
   ]);
+}
+
+/**
+ * Lista as transferências internas do usuário (mais recentes primeiro).
+ * Retorna `[]` quando a tabela `account_transfers` ainda não existe
+ * (base sem a migração) para não quebrar a tela de Bancos.
+ */
+export async function fetchAccountTransfers(): Promise<AccountTransfer[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("account_transfers")
+    .select("*")
+    .order("transfer_date", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  if (error) return [];
+  return (data as AccountTransfer[]) ?? [];
 }
 

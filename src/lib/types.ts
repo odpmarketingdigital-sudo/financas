@@ -71,6 +71,22 @@ export interface BankAccount {
   created_at: string;
 }
 
+export interface AccountTransfer {
+  id: string;
+  user_id: string;
+  /** Conta de origem (`bank_accounts.id`) — saldo diminui. */
+  from_account_id: string;
+  /** Conta de destino (`bank_accounts.id`) — saldo aumenta. */
+  to_account_id: string;
+  /** Valor transferido (sempre positivo). */
+  amount: number;
+  /** Data da transferência (YYYY-MM-DD). */
+  transfer_date: string;
+  /** Observação opcional (ex.: "Saque para despesas do mercado"). */
+  note: string | null;
+  created_at: string;
+}
+
 export interface DashboardSummary {
   /** Soma dos saldos de todas as contas e carteiras (`bank_accounts`). */
   saldoTotalAtual: number;
