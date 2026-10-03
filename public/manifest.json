@@ -1,21 +1,27 @@
 {
-    "name": "Finanças Família",
-    "short_name": "Finanças",
-    "description": "Gestão financeira compartilhada para famílias",
-    "start_url": "/dashboard",
-    "display": "standalone",
-    "background_color": "#ffffff",
-    "theme_color": "#00796b",
-    "icons": [
-      {
-        "src": "/icon-192x192.png",
-        "sizes": "192x192",
-        "type": "image/png"
-      },
-      {
-        "src": "/icon-512x512.png",
-        "sizes": "512x512",
-        "type": "image/png"
-      }
-    ]
-  }
+  "name": "Tostão em Dia",
+  "short_name": "Tostão",
+  "description": "Gestão financeira compartilhada para famílias",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#00796b",
+  "icons": [
+    {
+      "src": "/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ]
+}
