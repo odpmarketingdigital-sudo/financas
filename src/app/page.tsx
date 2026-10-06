@@ -23,8 +23,25 @@ export const metadata: Metadata = {
     "Organização financeira simples para você e sua família. Controle contas bancárias, dinheiro físico e o livro caixa diário sem complicação.",
 };
 
-/** URL de incorporação do vídeo tutorial (YouTube/Vimeo), opcional. */
-const TUTORIAL_VIDEO_URL = process.env.NEXT_PUBLIC_TUTORIAL_VIDEO_URL;
+/**
+ * URL de incorporação do vídeo tutorial (YouTube).
+ * Pode ser sobrescrita pela env `NEXT_PUBLIC_TUTORIAL_VIDEO_URL`.
+ */
+const TUTORIAL_VIDEO_URL =
+  process.env.NEXT_PUBLIC_TUTORIAL_VIDEO_URL ??
+  "https://www.youtube.com/embed/KMI6_LAj7IY";
+
+/** Título exibido em destaque acima do vídeo da seção "Como Usar". */
+const VIDEO_TITLE = "Vídeo Explicativo - Como Funciona o Tostão em Dia";
+
+/** Tópicos cobertos no vídeo, para consulta rápida. */
+const TOPICS = [
+  "Cadastrar bancos",
+  "Entradas",
+  "Despesas",
+  "Fluxo de caixa",
+  "Transferências",
+] as const;
 
 /** Navegação principal (links de ancoragem das seções da Landing Page). */
 const NAV_LINKS = [
@@ -282,31 +299,31 @@ export default async function HomePage() {
             </div>
 
             <div className="mx-auto mt-10 max-w-4xl">
-              <div className="relative aspect-video w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-900 shadow-lg">
-                {TUTORIAL_VIDEO_URL ? (
-                  <iframe
-                    className="absolute inset-0 h-full w-full"
-                    src={TUTORIAL_VIDEO_URL}
-                    title="Vídeo tutorial do Tostão em Dia"
-                    loading="lazy"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                    allowFullScreen
-                  />
-                ) : (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-gradient-to-br from-teal-800 to-slate-900 px-6 text-center text-white">
-                    <span className="flex h-16 w-16 items-center justify-center rounded-full bg-white/10 ring-1 ring-white/20">
-                      <CirclePlay className="h-8 w-8" aria-hidden="true" />
-                    </span>
-                    <p className="text-lg font-semibold">
-                      Vídeo tutorial em breve
-                    </p>
-                    <p className="max-w-md text-sm text-teal-100">
-                      O container já está pronto para receber o vídeo
-                      (YouTube ou Vimeo).
-                    </p>
-                  </div>
-                )}
+              <h3 className="text-base font-semibold text-slate-900">
+                {VIDEO_TITLE}
+              </h3>
+
+              <div className="relative mt-3 aspect-video w-full overflow-hidden rounded-2xl shadow-md ring-1 ring-slate-200">
+                <iframe
+                  className="absolute inset-0 h-full w-full"
+                  src={TUTORIAL_VIDEO_URL}
+                  title={VIDEO_TITLE}
+                  loading="lazy"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                />
               </div>
+
+              <ul className="mt-4 flex flex-wrap gap-2">
+                {TOPICS.map((topic) => (
+                  <li
+                    key={topic}
+                    className="rounded-full border border-teal-200 bg-teal-50 px-3 py-1 text-xs font-medium text-teal-700"
+                  >
+                    {topic}
+                  </li>
+                ))}
+              </ul>
             </div>
 
             <ol className="mx-auto mt-12 grid max-w-4xl gap-5 sm:grid-cols-3">

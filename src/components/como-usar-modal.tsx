@@ -1,11 +1,28 @@
 "use client";
 
 import { useEffect } from "react";
-import { CirclePlay, Landmark, Receipt, TrendingUp, X } from "lucide-react";
+import { Landmark, Receipt, TrendingUp, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-/** URL de incorporação do vídeo tutorial (YouTube/Vimeo), opcional. */
-const TUTORIAL_VIDEO_URL = process.env.NEXT_PUBLIC_TUTORIAL_VIDEO_URL;
+/**
+ * URL de incorporação do vídeo tutorial (YouTube).
+ * Pode ser sobrescrita pela env `NEXT_PUBLIC_TUTORIAL_VIDEO_URL`.
+ */
+const TUTORIAL_VIDEO_URL =
+  process.env.NEXT_PUBLIC_TUTORIAL_VIDEO_URL ??
+  "https://www.youtube.com/embed/KMI6_LAj7IY";
+
+/** Título exibido em destaque acima do vídeo. */
+const VIDEO_TITLE = "Vídeo Explicativo - Como Funciona o Tostão em Dia";
+
+/** Tópicos cobertos no vídeo, para consulta rápida. */
+const TOPICS = [
+  "Cadastrar bancos",
+  "Entradas",
+  "Despesas",
+  "Fluxo de caixa",
+  "Transferências",
+] as const;
 
 /** Guia rápido em 3 passos. */
 const STEPS = [
@@ -71,27 +88,32 @@ export function ComoUsarModal({ open, onClose }: ComoUsarModalProps) {
           </h2>
 
           <div className="mt-5 flex flex-col gap-5">
-            <div className="relative aspect-video w-full overflow-hidden rounded-xl border border-slate-200 bg-slate-900">
-              {TUTORIAL_VIDEO_URL ? (
+            <div>
+              <p className="text-sm font-semibold text-slate-900">
+                {VIDEO_TITLE}
+              </p>
+
+              <div className="relative mt-2 aspect-video w-full overflow-hidden rounded-xl shadow-md ring-1 ring-slate-200">
                 <iframe
                   className="absolute inset-0 h-full w-full"
                   src={TUTORIAL_VIDEO_URL}
-                  title="Vídeo tutorial do Tostão em Dia"
+                  title={VIDEO_TITLE}
                   loading="lazy"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                   allowFullScreen
                 />
-              ) : (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-gradient-to-br from-teal-800 to-slate-900 px-6 text-center text-white">
-                  <CirclePlay className="h-9 w-9" aria-hidden="true" />
-                  <p className="text-sm font-semibold">
-                    Vídeo tutorial em breve
-                  </p>
-                  <p className="text-xs text-teal-100">
-                    Espaço pronto para receber o vídeo (YouTube/Vimeo).
-                  </p>
-                </div>
-              )}
+              </div>
+
+              <ul className="mt-3 flex flex-wrap gap-2">
+                {TOPICS.map((topic) => (
+                  <li
+                    key={topic}
+                    className="rounded-full border border-teal-200 bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-700"
+                  >
+                    {topic}
+                  </li>
+                ))}
+              </ul>
             </div>
 
             <ol className="flex flex-col gap-3">
