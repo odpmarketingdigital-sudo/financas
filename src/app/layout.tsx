@@ -22,11 +22,47 @@ export const viewport: Viewport = {
   themeColor: "#00796b",
 };
 
+// URL canônica do app. Usa NEXT_PUBLIC_SITE_URL quando definida (produção,
+// preview/Vercel) e cai para o domínio de produção em build/desenvolvimento local.
+const siteUrl =
+  process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/+$/, "") ??
+  "https://tostaoemdia.com.br";
+
 export const metadata: Metadata = {
+  // Base para resolver links canônicos, Open Graph e Twitter (compartilhamento),
+  // além de URLs relativas de ícones/imagens de metadado.
+  metadataBase: new URL(siteUrl),
   title: "Tostão em Dia",
   description:
     "Aplicação educacional de finanças pessoais para ajudar famílias a organizar despesas e recebíveis.",
   manifest: "/manifest.json",
+  alternates: {
+    canonical: "/",
+  },
+  openGraph: {
+    type: "website",
+    locale: "pt_BR",
+    url: "/",
+    siteName: "Tostão em Dia",
+    title: "Tostão em Dia",
+    description:
+      "Aplicação educacional de finanças pessoais para ajudar famílias a organizar despesas e recebíveis.",
+    images: [
+      {
+        url: "/icon-512x512.png",
+        width: 512,
+        height: 512,
+        alt: "Tostão em Dia",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary",
+    title: "Tostão em Dia",
+    description:
+      "Aplicação educacional de finanças pessoais para ajudar famílias a organizar despesas e recebíveis.",
+    images: ["/icon-512x512.png"],
+  },
   appleWebApp: {
     capable: true,
     // Habilita o modo standalone no iOS com a barra de status translúcida.
