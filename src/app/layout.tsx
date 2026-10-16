@@ -70,6 +70,19 @@ export const metadata: Metadata = {
     title: "Tostão em Dia",
   },
   icons: {
+    // Favicon da aba do navegador (PNGs da pasta public/).
+    icon: [
+      {
+        url: "/icon-192x192.png",
+        sizes: "192x192",
+        type: "image/png",
+      },
+      {
+        url: "/icon-512x512.png",
+        sizes: "512x512",
+        type: "image/png",
+      },
+    ],
     // Ícone dedicado ao iOS (180x180, fundo sólido sem transparência).
     apple: [
       {
