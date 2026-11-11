@@ -88,7 +88,7 @@ export interface AccountTransfer {
 }
 
 export interface DashboardSummary {
-  /** Soma dos saldos de todas as contas e carteiras (`bank_accounts`). */
+  /** Saldo atual total do mês selecionado: saldo inicial (initial_balance) + recebido − pago do período. */
   saldoTotalAtual: number;
   /** Soma apenas das contas marcadas como dinheiro físico (`is_cash`). */
   dinheiroEmMao: number;

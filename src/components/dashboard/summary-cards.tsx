@@ -23,6 +23,11 @@ import {
   Loader2,
 } from "lucide-react";
 
+/** Arredonda para duas casas e evita ruído de ponto flutuante. */
+function roundCurrency(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
 const emptySummary: DashboardSummary = {
   saldoTotalAtual: 0,
   dinheiroEmMao: 0,
@@ -63,7 +68,9 @@ export function SummaryCards() {
           .from("receivables")
           .select("amount_due, amount_paid, status")
           .eq("reference_month", referenceMonth),
-        supabase.from("bank_accounts").select("balance, is_cash"),
+        supabase
+          .from("bank_accounts")
+          .select("balance, is_cash, initial_balance"),
       ]);
 
       if (cancelled) return;
@@ -92,9 +99,19 @@ export function SummaryCards() {
           0,
         );
 
-      const saldoTotalAtual = bankAccounts.reduce(
-        (sum, account) => sum + Number(account.balance),
+      // Saldo atual total do mês selecionado:
+      //   saldo inicial (initial_balance das contas) + recebido − pago do período.
+      // Mantém o card consistente com "Total Recebido" / "Total Pago", que já são
+      // filtrados por reference_month. O saldo de bank_accounts.balance é
+      // recalculado acumulando TODO o histórico (recalculateBankAccountBalances
+      // não filtra por mês), portanto não pode ser somado diretamente aqui sem
+      // distorcer o valor do período corrente.
+      const openingBalance = bankAccounts.reduce(
+        (sum, account) => sum + Number(account.initial_balance ?? 0),
         0,
+      );
+      const saldoTotalAtual = roundCurrency(
+        openingBalance + totalRecebido - totalPago,
       );
 
       const dinheiroEmMao = bankAccounts
